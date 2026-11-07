@@ -101,10 +101,36 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
+        <!-- RabbitMQ：支付回调异步化，解耦「回调落库」与「来单提醒」 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- BCrypt 密码加密（自带随机盐，替代 MD5，防止彩虹表/暴力破解） -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <!-- 参数校验（JSR-303 / Bean Validation） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- jasypt 配置加密：把配置文件中的明文敏感信息（数据库密码/密钥等）加密为 ENC(...) 密文 -->
+        <dependency>
+            <groupId>com.github.ulisesbocchio</groupId>
+            <artifactId>jasypt-spring-boot-starter</artifactId>
+            <version>3.0.5</version>
+        </dependency>
+
+        <!-- Resilience4j：应用层限流/熔断，与 Nginx 网关限流形成「网关+应用」双层防护 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot2</artifactId>
+            <version>1.7.1</version>
         </dependency>
 
         <dependency>

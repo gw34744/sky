@@ -1,7 +1,30 @@
 server:
   port: 8080
+  tomcat:
+    # 高负载下扩大线程池，避免默认 200 线程被瞬间打满
+    threads:
+      max: 400
+      min-spare: 50
+    # 每个连接可接受的最大请求数（长连接复用），默认 100，适当调高
+    max-keep-alive-requests: 200
+    # 连接超时（毫秒），避免慢请求长期占用线程
+    connection-timeout: 20000
+    # 等待队列长度，超过后拒绝请求而非无限积压
+    accept-count: 200
+
+# ===== jasypt 配置加密 =====
+# 解密密钥通过环境变量 JASYPT_ENCRYPTOR_PASSWORD 注入，不写在配置文件里（写在这里等于没加密）。
+# 本地启动示例（IDEA VM options 或系统环境变量）：
+#   -DJASYPT_ENCRYPTOR_PASSWORD=sky-take-out-jasypt-key
+jasypt:
+  encryptor:
+    # 加密算法：AES-256 + HMAC-SHA512，与生成密文时保持一致
+    algorithm: PBEWITHHMACSHA512ANDAES_256
+    iv-generator-classname: org.jasypt.iv.RandomIvGenerator
 
 spring:
+  application:
+    name: sky-take-out
   profiles:
     active: dev
   main:
@@ -12,11 +35,75 @@ spring:
       url: jdbc:mysql://${sky.datasource.host}:${sky.datasource.port}/${sky.datasource.database}?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
       username: ${sky.datasource.username}
       password: ${sky.datasource.password}
+      # ===== 连接池显式调优（默认 maxActive 仅 8，高并发会严重阻塞）=====
+      initial-size: 10            # 初始连接数
+      min-idle: 10                # 最小空闲连接
+      max-active: 100             # 最大活跃连接数（默认 8，太小）
+      max-wait: 5000              # 获取连接最大等待时间（毫秒），超时报错而非无限阻塞
+      time-between-eviction-runs-millis: 60000   # 空闲连接回收间隔
+      min-evictable-idle-time-millis: 300000      # 连接最小空闲存活时间
+      validation-query: SELECT 1  # 探活 SQL
+      test-while-idle: true       # 空闲时探活，剔除失效连接
+      test-on-borrow: false       # 借出时不重复探活（性能）
+      test-on-return: false
+      pool-prepared-statements: true          # 开启 PSCache
+      max-pool-prepared-statement-per-connection-size: 20
   redis:
     host: ${sky.redis.host}
     port: ${sky.redis.port}
     password: ${sky.redis.password}
     database: ${sky.redis.database}
+    # ===== Lettuce 连接池（默认无池化，高并发开销大）=====
+    lettuce:
+      pool:
+        max-active: 50        # 最大活跃连接
+        max-idle: 20          # 最大空闲连接
+        min-idle: 5           # 最小空闲连接
+        max-wait: 3000ms      # 获取连接最大等待时间
+      shutdown-timeout: 200ms
+  # ===== RabbitMQ（支付回调异步化）=====
+  rabbitmq:
+    host: ${sky.rabbitmq.host}
+    port: ${sky.rabbitmq.port}
+    username: ${sky.rabbitmq.username}
+    password: ${sky.rabbitmq.password}
+    virtual-host: ${sky.rabbitmq.virtual-host}
+    # 消息可靠性：开启发送端确认 + 路由失败返回
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        # 消费端手动 ACK，处理成功才确认，失败不确认触发重试
+        acknowledge-mode: manual
+        # 消费失败重试次数，超限进入死信队列
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000ms
+          multiplier: 2.0
+
+# ===== Resilience4j 应用层限流 + 熔断（与 Nginx 网关限流形成双层防护）=====
+resilience4j:
+  ratelimiter:
+    instances:
+      orderSubmit:
+        limit-for-period: 5        # 每个周期最多 5 个请求（防刷单）
+        limit-refresh-period: 1s   # 周期 1 秒
+        timeout-duration: 0        # 超过限流立即失败，不等待
+      payment:
+        limit-for-period: 10
+        limit-refresh-period: 1s
+        timeout-duration: 0
+  circuitbreaker:
+    instances:
+      orderService:
+        register-health-indicator: true
+        sliding-window-size: 10    # 滑动窗口大小（最近 10 次调用）
+        sliding-window-type: COUNT_BASED
+        failure-rate-threshold: 50 # 失败率 50% 触发熔断
+        wait-duration-in-open-state: 10s  # 熔断后 10 秒进入半开状态
+        permitted-number-of-calls-in-half-open-state: 5  # 半开状态放行 5 个请求试探
+        minimum-number-of-calls: 5 # 最少调用 5 次才开始统计失败率
 
 mybatis:
   #mapper配置文件
@@ -30,19 +117,20 @@ logging:
   level:
     com:
       sky:
-        mapper: debug
+        # mapper 默认 debug 会打印每一条 SQL，高负载下日志 I/O 成为瓶颈，降为 info
+        mapper: info
         service: info
         controller: info
 
 sky:
   jwt:
-    # 设置jwt签名加密时使用的秘钥
-    admin-secret-key: itcast
+    # 设置jwt签名加密时使用的秘钥（已用 jasypt 加密）
+    admin-secret-key: ENC(Em6mObdG//Wmu3kMQvgKY0fC2RhU398bW4mpF701MslA75OuRJ6/JegJZP909Ewk)
     # 设置jwt过期时间
     admin-ttl: 7200000
     # 设置前端传递过来的令牌名称
     admin-token-name: token
-    user-secret-key: itheima
+    user-secret-key: ENC(AdPjeC3nMUMRFdoaYep6DNXwNlCjoqp4oAe255Dv7nkbeRAGe8lPxm2jYdM8THgt)
     user-ttl: 7200000
     user-token-name: authentication
   alioss:
@@ -63,4 +151,4 @@ sky:
   shop:
     address: 湖北省武汉市洪山区徐东大街18号
   baidu:
-    ak: EFEEFFEFEFE
+    ak: ENC(4ky3bpg3zA9NDPmJPPcUrHlrG3THn+naacBh08zzNFpAWZ5qlynsGQEQCrJ0zonA)

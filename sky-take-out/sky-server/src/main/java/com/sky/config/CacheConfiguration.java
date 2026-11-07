@@ -14,6 +14,7 @@ import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.time.Duration;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Spring Cache（注解式缓存）配置类
@@ -30,14 +31,19 @@ import java.time.Duration;
 public class CacheConfiguration extends CachingConfigurerSupport {
 
     /**
-     * 缓存统一过期时间：基础 30 分钟 + 随机 0~10 分钟。
-     * 随机值避免大量 key 在同一时刻同时过期（缓存雪崩）。
+     * 缓存基础过期时间：30 分钟。
+     * 实际 TTL 在 {@link #cacheManager} 中叠加 0~10 分钟随机值，
+     * 随机值用于避免大量 key 在同一时刻同时过期（缓存雪崩）。
      */
-    private static final Duration CACHE_TTL = Duration.ofMinutes(30 + (long) (Math.random() * 10));
+    private static final Duration BASE_TTL = Duration.ofMinutes(30);
 
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory redisConnectionFactory) {
-        log.info("创建 RedisCacheManager，缓存 TTL = {} 分钟", CACHE_TTL.toMinutes());
+        // 每次构建时在基础 TTL 上叠加 0~10 分钟随机值：
+        // 1) 不同服务实例启动时间不同，叠加随机值后各实例 TTL 错开，防止缓存雪崩；
+        // 2) 用 ThreadLocalRandom 而非 Math.random()（后者在 static final 字段里只算一次，会退化成固定值）。
+        Duration ttl = BASE_TTL.plus(Duration.ofMinutes(ThreadLocalRandom.current().nextInt(10)));
+        log.info("创建 RedisCacheManager，缓存 TTL = {} 分钟", ttl.toMinutes());
 
         // key 使用 String 序列化，value 使用 JSON 序列化（可读、跨语言、无需实现 Serializable）
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
@@ -45,7 +51,7 @@ public class CacheConfiguration extends CachingConfigurerSupport {
                         .fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair
                         .fromSerializer(new GenericJackson2JsonRedisSerializer()))
-                .entryTtl(CACHE_TTL);
+                .entryTtl(ttl);
 
         return RedisCacheManager.builder(redisConnectionFactory)
                 .cacheDefaults(config)
