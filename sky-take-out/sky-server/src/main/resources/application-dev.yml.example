@@ -1,0 +1,35 @@
+# ============================================================
+# 开发环境配置模板（无真实密钥）
+# 使用说明：
+#   1. 复制本文件为 application-dev.yml
+#   2. 把下面的 <...> 占位符替换成你自己的真实值
+#   3. application-dev.yml 已被 .gitignore 排除，不会被提交到 GitHub
+# ============================================================
+sky:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    host: localhost
+    port: 3306
+    database: sky_take_out
+    username: <你的数据库用户名>
+    password: <你的数据库密码>
+  alioss:
+    endpoint: oss-cn-hangzhou.aliyuncs.com
+    access-key-id: <你的阿里云AccessKeyId>
+    access-key-secret: <你的阿里云AccessKeySecret>
+    bucket-name: sky-take-out
+  redis:
+    host: localhost
+    port: 6379
+    password: <你的Redis密码，可为空>
+    database: 10
+  wechat:
+    appid: <你的微信AppId>
+    secret: <你的微信AppSecret>
+    mchid: <你的商户号>
+    mchSerialNo: <你的商户证书序列号>
+    privateKeyFilePath: <你的商户私钥pem路径>
+    apiV3Key: <你的微信支付APIv3密钥>
+    weChatPayCertFilePath: <你的微信支付平台证书路径>
+    notifyUrl: <你的支付回调地址>
+    refundNotifyUrl: <你的退款回调地址>

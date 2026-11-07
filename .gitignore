@@ -1,0 +1,59 @@
+# ===== 教学/运行资料（不属于项目代码，不入库）=====
+PPT/
+讲义/
+资料/
+assets/
+mp-weixin/
+nginx-1.20.2/
+必读：课程结构和能力目标.txt
+登录模块新手讲解.md
+
+# ===== IDE / 编辑器 =====
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== Java / Maven =====
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/
+.flattened-pom.xml
+
+# ===== 日志 =====
+*.log
+logs/
+*.pid
+
+# ===== 敏感配置（绝对不能提交）=====
+application-dev.yml
+application-local.yml
+application-prod.yml
+application-*.yml.bak
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.keystore
+*.jks
+credentials.properties
+secrets/
+
+# ===== 前端 =====
+node_modules/
+dist/
+*.local
+
+# ===== 系统 / 临时文件 =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== 数据库本地数据 =====
+*.sql.bak
+data/
