@@ -52,6 +52,13 @@
           and user_id = #{userId};
     </select>
 
+    <!-- 根据订单号查询订单（支付回调无登录态，不依赖 user_id） -->
+    <select id="getByNumber" resultType="com.sky.entity.Orders">
+        select *
+        from orders
+        where number = #{orderNumber};
+    </select>
+
 <!--    分页条件查询-->
     <select id="pageQuery" resultType="com.sky.entity.Orders">
         select *

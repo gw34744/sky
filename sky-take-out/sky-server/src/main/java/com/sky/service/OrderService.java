@@ -24,10 +24,11 @@ public interface OrderService {
     OrderPaymentVO payment(OrdersPaymentDTO ordersPaymentDTO) throws Exception;
 
     /**
-     * 支付成功，修改订单状态
-     * @param outTradeNo
+     * 支付成功，修改订单状态（幂等）
+     * @param outTradeNo    商户订单号
+     * @param transactionId 微信支付交易号
      */
-    void paySuccess(String outTradeNo);
+    void paySuccess(String outTradeNo, String transactionId);
 
     /**
      * 历史订单查询

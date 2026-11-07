@@ -6,9 +6,13 @@ import com.alibaba.fastjson.JSONObject;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
 import com.sky.constant.MessageConstant;
+import com.sky.constant.WsMessageConstant;
 import com.sky.context.BaseContext;
+import com.sky.context.TraceIdUtil;
+import com.sky.config.RabbitMQConfiguration;
 import com.sky.dto.*;
 import com.sky.entity.*;
+import com.sky.enumeration.OrderStatus;
 import com.sky.exception.AddressBookBusinessException;
 import com.sky.exception.OrderBusinessException;
 import com.sky.exception.ShoppingCartBusinessException;
@@ -24,6 +28,7 @@ import com.sky.vo.OrderSubmitVO;
 import com.sky.vo.OrderVO;
 import com.sky.websocket.WebSocketServer;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -71,13 +77,21 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private WebSocketServer webSocketServer;
 
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
     /**
      * 用户下单
+     *
+     * <p>熔断：当数据库/下游调用连续失败率达到阈值时，熔断器打开，快速失败并走降级，
+     * 避免雪崩（下单是核心链路，保护它不被异常流量拖垮）。
+     *
      * @param ordersSubmitDTO
      * @return
      */
     @Override
     @Transactional
+    @io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker(name = "orderService", fallbackMethod = "submitOrderFallback")
     public OrderSubmitVO submitOrder(OrdersSubmitDTO ordersSubmitDTO) {
 //        异常情况的处理（收货地址为空、超出配送氛围、购物车为空）
         AddressBook addressBook = addressBookMapper.getById(ordersSubmitDTO.getAddressBookId());
@@ -140,6 +154,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
+     * 下单熔断降级：熔断器打开或下单异常时，抛出业务异常快速失败，
+     * 由全局异常处理器统一返回友好提示，避免请求堆积拖垮系统。
+     *
+     * <p>注意：fallback 方法签名须与原方法一致，末尾加 Throwable 接收异常。
+     */
+    public OrderSubmitVO submitOrderFallback(OrdersSubmitDTO ordersSubmitDTO, Throwable throwable) {
+        log.error("下单熔断降级触发，订单服务异常：{}", throwable.getMessage());
+        throw new OrderBusinessException("系统繁忙，下单暂时不可用，请稍后再试");
+    }
+
+    /**
      * 订单支付
      * @param ordersPaymentDTO
      * @return
@@ -174,33 +199,55 @@ public class OrderServiceImpl implements OrderService {
 
     /**
      * 支付成功，修改订单状态
-     * @param outTradeNo
+     *
+     * <p>支付回调异步化：本方法只做「幂等校验 + 落库」这两件最小必要操作，保证快速返回，
+     * 避免微信因超时重试；「来单提醒」等后续动作通过 RabbitMQ 异步解耦，由消费者推送 WebSocket。
+     *
+     * @param outTradeNo    商户订单号
+     * @param transactionId 微信支付交易号
      */
     @Override
-    public void paySuccess(String outTradeNo) {
-//        当前登录用户id
-        Long userId = BaseContext.getCurrentId();
+    public void paySuccess(String outTradeNo, String transactionId) {
+//        根据订单号查询订单（支付回调无登录态，不能用 BaseContext 里的 userId）
+        Orders orderDB = orderMapper.getByNumber(outTradeNo);
+        if (orderDB == null) {
+            log.error("支付回调：订单不存在，订单号：{}", outTradeNo);
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
 
-//        根据订单号查询当前用户的订单
-        Orders orderDB = orderMapper.getByNumberAndUserId(outTradeNo, userId);
+//        幂等判断：订单已是已支付状态，说明是微信的重复回调，直接返回，不重复处理
+        if (Orders.PAID.equals(orderDB.getPayStatus())) {
+            log.info("支付回调：订单已处理过（重复回调），忽略，订单号：{}", outTradeNo);
+            return;
+        }
 
-//        根据订单id更新订单的状态、支付方式、支付状态、结账时间
+//        根据订单id更新订单的状态、支付状态、结账时间、微信交易号
         Orders orders = Orders.builder()
                 .id(orderDB.getId())
                 .status(Orders.TO_BE_CONFIRMED)
                 .payStatus(Orders.PAID)
+                .transactionId(transactionId)
                 .checkoutTime(LocalDateTime.now())
                 .build();
         orderMapper.update(orders);
 
-        HashMap map = new HashMap();
-        map.put("type", 1);
-        map.put("orderId", orders.getId());
-        map.put("content", "订单号：" + outTradeNo);
-
-//        通过WebSocket实现来电提醒，向客户端浏览器推送消息
-        webSocketServer.sendToAllClient(JSON.toJSONString(map));
-
+//        支付回调异步化：发送「来单提醒」消息到 MQ，由消费者异步推送 WebSocket，
+//        不在回调线程里做推送，避免后续动作变重时拖慢微信回调响应导致超时重试
+        String comingMsg = buildMessage(WsMessageConstant.TYPE_ORDER_COMING,
+                orders.getId(), outTradeNo, orders.getStatus(),
+                orderDB.getDeliveryStatus(), "新订单来单，请及时接单");
+        // 链路追踪：把当前线程的 traceId 透传到消息头，消费者线程取出后重新注入 MDC，
+        // 实现「支付回调 → MQ 消费 → WebSocket 推送」整条异步链路日志可串联
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfiguration.ORDER_NOTIFY_EXCHANGE,
+                RabbitMQConfiguration.ORDER_NOTIFY_ROUTING_KEY,
+                comingMsg,
+                message -> {
+                    message.getMessageProperties().setHeader(
+                            TraceIdUtil.TRACE_ID_HEADER, TraceIdUtil.getTraceId());
+                    return message;
+                });
+        log.info("支付回调：来单提醒消息已发送 MQ，订单号：{}", outTradeNo);
     }
 
     /**
@@ -377,11 +424,23 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public void confirm(OrdersCancelDTO ordersCancelDTO) {
+        Orders orderDB = orderMapper.getById(ordersCancelDTO.getId());
+        if (orderDB == null) {
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
+        }
+
+        // 状态机校验：待接单 → 已接单
+        OrderStatus.checkTransition(OrderStatus.of(orderDB.getStatus()), OrderStatus.CONFIRMED);
+
         Orders orders = Orders.builder()
                 .id(ordersCancelDTO.getId())
                 .status(Orders.CONFIRMED)
                 .build();
         orderMapper.update(orders);
+
+//        推送「已接单」状态给下单用户
+        pushStatus(orderDB.getUserId(), ordersCancelDTO.getId(), orderDB.getNumber(),
+                Orders.CONFIRMED, orderDB.getDeliveryStatus(), "商家已接单，正在备餐");
     }
 
     /**
@@ -394,9 +453,11 @@ public class OrderServiceImpl implements OrderService {
         Orders ordersDB = orderMapper.getById(ordersRejectionDTO.getId());
 
 //        订单只有存在且状态为2（待接单）才可以拒单
-        if (ordersDB == null || !ordersDB.getStatus().equals(Orders.TO_BE_CONFIRMED)) {
-            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        if (ordersDB == null) {
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
         }
+        // 状态机校验：待接单 → 已取消（拒单）
+        OrderStatus.checkTransition(OrderStatus.of(ordersDB.getStatus()), OrderStatus.CANCELLED);
 
 //        支付状态
         Integer payStatus = ordersDB.getPayStatus();
@@ -419,6 +480,10 @@ public class OrderServiceImpl implements OrderService {
         orders.setCancelTime(LocalDateTime.now());
 
         orderMapper.update(orders);
+
+//        推送「订单被拒」状态给下单用户
+        pushStatus(ordersDB.getUserId(), ordersDB.getId(), ordersDB.getNumber(),
+                Orders.CANCELLED, ordersDB.getDeliveryStatus(), "订单已被商家拒绝：" + ordersRejectionDTO.getRejectionReason());
     }
 
     /**
@@ -462,9 +527,11 @@ public class OrderServiceImpl implements OrderService {
         Orders orderDB = orderMapper.getById(id);
 
 //        校验订单是否存在，并且状态为3
-        if (orderDB == null || !orderDB.getStatus().equals(Orders.CONFIRMED)) {
-            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        if (orderDB == null) {
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
         }
+        // 状态机校验：已接单 → 派送中
+        OrderStatus.checkTransition(OrderStatus.of(orderDB.getStatus()), OrderStatus.DELIVERY_IN_PROGRESS);
 
         Orders orders = new Orders();
         orders.setId(orderDB.getId());
@@ -473,6 +540,13 @@ public class OrderServiceImpl implements OrderService {
         orders.setStatus(Orders.DELIVERY_IN_PROGRESS);
 
         orderMapper.update(orders);
+
+//        推送「骑手派送中」状态给下单用户；文案区分立即送出/预定时间
+        String deliveryTip = Objects.equals(orderDB.getDeliveryStatus(), WsMessageConstant.DELIVERY_IMMEDIATE)
+                ? "骑手已取餐，正在配送中"
+                : "订单已按预定时间送出，骑手配送中";
+        pushStatus(orderDB.getUserId(), orderDB.getId(), orderDB.getNumber(),
+                Orders.DELIVERY_IN_PROGRESS, orderDB.getDeliveryStatus(), deliveryTip);
     }
 
     /**
@@ -485,18 +559,24 @@ public class OrderServiceImpl implements OrderService {
         Orders orderDB = orderMapper.getById(id);
 
 //        校验订单是否存在，并且状态为4
-        if (orderDB == null || !orderDB.getStatus().equals(Orders.DELIVERY_IN_PROGRESS)) {
-            throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
+        if (orderDB == null) {
+            throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
         }
+        // 状态机校验：派送中 → 已完成
+        OrderStatus.checkTransition(OrderStatus.of(orderDB.getStatus()), OrderStatus.COMPLETED);
 
         Orders orders = new Orders();
-        orders.setId(orders.getId());
+        orders.setId(orderDB.getId());
 
 //        更新订单状态，状态转为完成
-        orders.setStatus(Orders.CONFIRMED);
+        orders.setStatus(Orders.COMPLETED);
         orders.setDeliveryTime(LocalDateTime.now());
 
         orderMapper.update(orders);
+
+//        推送「订单已完成」状态给下单用户
+        pushStatus(orderDB.getUserId(), orderDB.getId(), orderDB.getNumber(),
+                Orders.COMPLETED, orderDB.getDeliveryStatus(), "订单已送达，用餐愉快");
     }
 
     /**
@@ -511,12 +591,11 @@ public class OrderServiceImpl implements OrderService {
             throw new OrderBusinessException(MessageConstant.ORDER_NOT_FOUND);
         }
 
-//        基于WebSocket实现催单
-        HashMap map = new HashMap();
-        map.put("type", 2);
-        map.put("orderId", id);
-        map.put("content", "订单号：" + orders.getNumber());
-        webSocketServer.sendToAllClient(JSON.toJSONString(map));
+//        基于WebSocket实现催单，向管理端推送
+        String remindMsg = buildMessage(WsMessageConstant.TYPE_REMINDER,
+                orders.getId(), orders.getNumber(), orders.getStatus(),
+                orders.getDeliveryStatus(), "用户催单，请尽快处理");
+        webSocketServer.sendToAllClient(remindMsg);
     }
 
     /**
@@ -556,6 +635,51 @@ public class OrderServiceImpl implements OrderService {
 
 //        将该订单对应的所有菜品信息拼接在一起
         return String.join("", ordewrDishList);
+    }
+
+    /**
+     * 订单状态变更，定向推送给下单用户
+     *
+     * @param userId         下单用户id（作为 WebSocket 的 sid）
+     * @param orderId        订单id
+     * @param orderNumber    订单号
+     * @param status         变更后的订单状态
+     * @param deliveryStatus 配送方式（1立即送出 0预定时间）
+     * @param content        提示文案
+     */
+    private void pushStatus(Long userId, Long orderId, String orderNumber,
+                            Integer status, Integer deliveryStatus, String content) {
+        if (userId == null) {
+            log.warn("[WebSocket] 订单 {} 未关联用户，无法定向推送", orderNumber);
+            return;
+        }
+        String message = buildMessage(WsMessageConstant.TYPE_STATUS_CHANGE,
+                orderId, orderNumber, status, deliveryStatus, content);
+        webSocketServer.sendToUser(String.valueOf(userId), message);
+    }
+
+    /**
+     * 构建统一的 WebSocket 推送消息 JSON
+     *
+     * @param type           消息类型，见 {@code WsMessageConstant}
+     * @param orderId        订单id
+     * @param orderNumber    订单号
+     * @param status         订单状态
+     * @param deliveryStatus 配送方式
+     * @param content        提示文案
+     * @return JSON 字符串
+     */
+    private String buildMessage(Integer type, Long orderId, String orderNumber,
+                                Integer status, Integer deliveryStatus, String content) {
+        HashMap<String, Object> map = new HashMap<>();
+        map.put("type", type);
+        map.put("orderId", orderId);
+        map.put("orderNumber", orderNumber);
+        map.put("status", status);
+        map.put("deliveryStatus", deliveryStatus);
+        map.put("content", content);
+        map.put("timestamp", System.currentTimeMillis());
+        return JSON.toJSONString(map);
     }
 
     /**

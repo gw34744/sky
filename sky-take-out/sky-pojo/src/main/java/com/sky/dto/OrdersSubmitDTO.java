@@ -3,6 +3,7 @@ package com.sky.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
+import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ import java.time.LocalDateTime;
 @Data
 public class OrdersSubmitDTO implements Serializable {
     //地址簿id
+    @NotNull(message = "收货地址不能为空")
     private Long addressBookId;
     //付款方式
     private int payMethod;
@@ -27,5 +29,6 @@ public class OrdersSubmitDTO implements Serializable {
     //打包费
     private Integer packAmount;
     //总金额
+    @NotNull(message = "订单金额不能为空")
     private BigDecimal amount;
 }

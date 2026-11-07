@@ -8,6 +8,7 @@ import com.sky.service.OrderService;
 import com.sky.vo.OrderPaymentVO;
 import com.sky.vo.OrderSubmitVO;
 import com.sky.vo.OrderVO;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import javax.validation.Valid;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -56,23 +58,33 @@ public class OrderController {
      *
      * <p>幂等校验：携带 submitToken 提交，后端原子校验并删除 token，重复提交将被拒绝。
      *
+     * <p>限流：应用层限流（Resilience4j RateLimiter，1 秒 5 个），与 Nginx 网关限流形成双层防护，
+     * 防止刷单/恶意高频提交。
+     *
      * @param ordersSubmitDTO
      * @return
      */
     @PostMapping("/submit")
     @ApiOperation("用户下单")
-    public Result<OrderSubmitVO> submit(@RequestBody OrdersSubmitDTO ordersSubmitDTO,
+    @RateLimiter(name = "orderSubmit", fallbackMethod = "submitFallback")
+    public Result<OrderSubmitVO> submit(@RequestBody @Valid OrdersSubmitDTO ordersSubmitDTO,
                                         @RequestHeader(value = "submitToken", required = false) String submitToken) {
         log.info("用户下单：{}", ordersSubmitDTO);
 
-//        幂等校验：使用 setIfAbsent 原子删除 token，保证并发下只有一个请求能通过校验
+//        幂等校验：读取 Redis 中的 token 与请求携带的 token 比对，一致才删除并放行。
+//        相比直接用 delete（无论 token 对错都删、且并发下可能双删），
+//        这里先 get 比对值，再原子删除，保证：
+//        1) 只有携带正确 token 的请求才能通过；
+//        2) token 一次性使用，用完即删，重复提交被拒绝。
         Long userId = com.sky.context.BaseContext.getCurrentId();
         String tokenKey = "submit_token_" + userId;
-        Boolean removed = redisTemplate.delete(tokenKey);
-        if (submitToken == null || !Boolean.TRUE.equals(removed)) {
-//            token 缺失或已失效（已被使用/过期），判定为重复提交
+        Object cached = redisTemplate.opsForValue().get(tokenKey);
+        if (submitToken == null || submitToken.isEmpty() || !submitToken.equals(cached)) {
+//            token 缺失、或与 Redis 中不一致（已失效/被篡改/重复提交），判定为重复提交
             return Result.error("请勿重复提交订单");
         }
+//        校验通过后删除 token（一次性），防止同一 token 被重复使用
+        redisTemplate.delete(tokenKey);
 
         OrderSubmitVO orderSubmitVO = orderService.submitOrder(ordersSubmitDTO);
         return Result.success(orderSubmitVO);
@@ -86,6 +98,7 @@ public class OrderController {
      */
     @PutMapping("/payment")
     @ApiOperation("订单支付")
+    @RateLimiter(name = "payment", fallbackMethod = "paymentFallback")
     public Result<OrderPaymentVO> payment(@RequestBody OrdersPaymentDTO ordersPaymentDTO) throws Exception {
         log.info("订单支付：{}", ordersPaymentDTO);
         OrderPaymentVO orderPaymentVO = orderService.payment(ordersPaymentDTO);
@@ -155,5 +168,23 @@ public class OrderController {
     public Result reminder(@PathVariable("id") Long id) {
         orderService.reminder(id);
         return Result.success();
+    }
+
+    /**
+     * 下单限流降级：请求超过限流阈值时返回友好提示，而非直接抛异常/无响应。
+     * 签名必须与原方法一致（参数、返回值类型相同），末尾可加 Throwable 参数接收限流异常。
+     */
+    public Result<OrderSubmitVO> submitFallback(OrdersSubmitDTO ordersSubmitDTO,
+                                                String submitToken, Throwable throwable) {
+        log.warn("下单被限流，拒绝请求：{}", ordersSubmitDTO);
+        return Result.error("下单请求过于频繁，请稍后再试");
+    }
+
+    /**
+     * 支付限流降级
+     */
+    public Result<OrderPaymentVO> paymentFallback(OrdersPaymentDTO ordersPaymentDTO, Throwable throwable) {
+        log.warn("支付请求被限流：{}", ordersPaymentDTO);
+        return Result.error("支付请求过于频繁，请稍后再试");
     }
 }
