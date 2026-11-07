@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    苍穹外卖 - 统一日志规范（Logback）
+
+    核心目标：统一日志收集 + 链路追踪
+    1. 全局统一输出格式，所有日志携带 traceId（链路追踪 ID），便于按 ID 聚合检索；
+    2. 分级落盘：控制台（开发）+ 滚动文件（生产），按天/按大小滚动归档，自动清理历史；
+    3. 异步写日志（AsyncAppender），避免高负载下日志 IO 阻塞业务线程（访问通道承载能力优化）；
+    4. 通过 springProfile 区分环境，dev 打印 SQL，prod 只落 info 以上，降低日志量与磁盘压力。
+
+    使用方式：
+      - 代码中直接用 @Slf4j + log.info/error，无需关心 traceId，MDC 会自动注入；
+      - 生产建议：将 file 路径改为挂载盘（如 /var/log/sky-take-out），并接入 ELK / 云日志服务统一收集；
+      - 链路追踪进阶：可无缝替换为 SkyWalking / Spring Cloud Sleuth（见 workbuddy 面试笔记）。
+-->
+<configuration scan="true" scanPeriod="60 seconds" debug="false">
+
+    <!-- ==================== 通用属性 ==================== -->
+    <!-- 日志根路径（可被 spring.profiles 覆盖，生产建议挂载到独立磁盘） -->
+    <property name="LOG_HOME" value="logs"/>
+    <!-- 应用名，用于多实例日志聚合时区分 -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="sky-take-out"/>
+
+    <!-- 统一日志格式：
+         %d       时间
+         %-5level 级别（左对齐）
+         [%thread] 线程名
+         %X{traceId} MDC 中的链路追踪 ID（核心，跨日志串联）
+         %logger{40} logger 名（截断到 40 字符）
+         %msg%n    消息 + 换行 -->
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [traceId:%X{traceId}] %logger{40} - %msg%n"/>
+
+    <!-- ==================== 输出器定义 ==================== -->
+
+    <!-- 1. 控制台输出：所有级别（开发友好，生产可关闭以省 IO） -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 2. 全量日志滚动文件：按天 + 按大小双重滚动 -->
+    <appender name="FILE_ALL" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/${APP_NAME}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- 每天归档一次，单文件超 100MB 再切分 -->
+            <fileNamePattern>${LOG_HOME}/%d{yyyy-MM-dd}/${APP_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <!-- 最多保留 30 天历史，自动清理，避免磁盘被打满 -->
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 3. 错误日志单独文件：ERROR 级别，便于告警与快速定位故障 -->
+    <appender name="FILE_ERROR" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/${APP_NAME}-error.log</file>
+        <!-- 只记录 ERROR 及以上，避免与全量日志重复 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/%d{yyyy-MM-dd}/${APP_NAME}-error.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 4. 异步包装：文件写入走独立线程池，不阻塞业务线程（高负载关键） -->
+    <appender name="ASYNC_FILE_ALL" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="FILE_ALL"/>
+        <!-- 队列满时丢弃 TRACE/DEBUG/INFO，只保留 WARN/ERROR，保证关键日志不丢 -->
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>1024</queueSize>
+        <!-- 队列满时的策略：继续等待，不丢弃（避免丢日志） -->
+        <neverBlock>false</neverBlock>
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <appender name="ASYNC_FILE_ERROR" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="FILE_ERROR"/>
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>512</queueSize>
+        <neverBlock>false</neverBlock>
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <!-- ==================== 环境差异化配置 ==================== -->
+
+    <!-- 开发环境：控制台全级别 + 打印 SQL，便于本地调试 -->
+    <springProfile name="dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_FILE_ALL"/>
+            <appender-ref ref="ASYNC_FILE_ERROR"/>
+        </root>
+
+        <!-- MyBatis SQL 日志：开发环境打印完整 SQL 及参数 -->
+        <logger name="com.sky.mapper" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+
+        <!-- 降低框架噪音 -->
+        <logger name="org.springframework" level="WARN"/>
+        <logger name="org.mybatis" level="WARN"/>
+    </springProfile>
+
+    <!-- 生产环境：只落文件，关闭控制台，SQL 不打，控制日志量与磁盘占用 -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="ASYNC_FILE_ALL"/>
+            <appender-ref ref="ASYNC_FILE_ERROR"/>
+        </root>
+        <!-- 生产关闭 MyBatis SQL 输出，避免日志爆炸 -->
+        <logger name="com.sky.mapper" level="WARN"/>
+        <logger name="org.springframework" level="WARN"/>
+        <logger name="org.mybatis" level="WARN"/>
+    </springProfile>
+
+</configuration>
