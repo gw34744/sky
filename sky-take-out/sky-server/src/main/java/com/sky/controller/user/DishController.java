@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
@@ -34,6 +35,10 @@ public class DishController {
      *
      * <p>缓存击穿防护：使用 Redis setIfAbsent 互斥锁，保证缓存失效的瞬间只有一个线程去查库并重建缓存，
      * 其余线程短暂等待后重试读取缓存，避免大量请求同时打到数据库。
+     *
+     * <p>缓存穿透防护（空值缓存）：当分类下没有菜品（或分类 id 本身不存在）时，查询结果为空列表，
+     * 若不缓存空值，每次请求都会穿透到数据库做空查询。这里将空结果也写入一个短过期时间的「空值标记」，
+     * 下次命中该标记直接返回空，避免恶意构造不存在的分类 id 反复打穿数据库。
      *
      * @param categoryId
      * @return
@@ -76,6 +81,14 @@ public class DishController {
             dish.setStatus(StatusConstant.ENABLE);//查询起售中的菜品
             list = dishService.listWithFlavor(dish);
 
+            if (list == null || list.isEmpty()) {
+//                缓存穿透防护：查库结果为空，缓存一个「空值标记」，短过期时间（如 5 分钟）。
+//                这样恶意构造不存在的分类 id 时，后续请求命中空标记直接返回，不再打库。
+//                注意：空值过期时间要短于正常缓存，避免分类后续新增菜品后长时间读不到。
+                redisTemplate.opsForValue().set(key, EMPTY_LIST, EMPTY_TTL_MINUTES, TimeUnit.MINUTES);
+                return Result.success(Collections.emptyList());
+            }
+
 //            写入缓存，并设置随机过期时间：基础 30 分钟 + 0~10 分钟随机值。
 //            1) 解决缓存无限膨胀占用内存的容量问题；
 //            2) 随机值避免大量 key 在同一时刻同时过期，防止缓存雪崩；
@@ -91,6 +104,16 @@ public class DishController {
             redisTemplate.delete(lockKey);
         }
     }
+
+    /**
+     * 空值缓存标记：用不可变的空列表占位，防止缓存穿透
+     */
+    private static final List<DishVO> EMPTY_LIST = Collections.emptyList();
+
+    /**
+     * 空值缓存过期时间（分钟）：短于正常缓存，避免分类新增菜品后长时间读不到
+     */
+    private static final long EMPTY_TTL_MINUTES = 5;
 
 
 }
