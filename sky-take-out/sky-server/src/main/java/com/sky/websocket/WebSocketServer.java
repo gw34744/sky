@@ -89,6 +89,23 @@ public class WebSocketServer {
     }
 
     /**
+     * 定向推送给用户端会话（sid 为纯数字 userId 的会话）
+     *
+     * <p>与 {@link #sendToAllClient} 的区别：只推送给用户端，不打扰管理端。
+     * 用于心跳等「只需用户端探活」的场景，避免管理端浏览器被无关消息打扰。
+     *
+     * @param message JSON 文本消息
+     */
+    public void sendToUserClients(String message) {
+        SESSION_MAP.forEach((sid, session) -> {
+            // 用户端 sid 约定为 userId（纯数字）；管理端 sid 为随机 clientId（含字母）
+            if (sid != null && sid.matches("\\d+")) {
+                send(session, message);
+            }
+        });
+    }
+
+    /**
      * 定向推送消息给指定 sid 的客户端
      *
      * @param sid     客户端业务标识（如 userId）

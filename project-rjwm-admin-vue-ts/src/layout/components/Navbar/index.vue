@@ -204,12 +204,17 @@ export default class extends Vue {
       // 监听socket消息接收
       this.websocket.onmessage = function (msg) {
         // 转换为json对象
+        const jsonMsg = JSON.parse(msg.data)
+
+        // 只处理「来单提醒(type=1)」和「用户催单(type=2)」两种业务消息；
+        // 心跳(type=0)、状态变更(type=3，推给用户端的)直接忽略，避免误弹窗。
+        if (jsonMsg.type !== 1 && jsonMsg.type !== 2) {
+          return
+        }
+
         that.$refs.audioVo.currentTime = 0
         that.$refs.audioVo2.currentTime = 0
 
-        console.log(msg, JSON.parse(msg.data), 'msg')
-        // const h = this.$createElement
-        const jsonMsg = JSON.parse(msg.data)
         if (jsonMsg.type === 1) {
           that.$refs.audioVo.play()
         } else if (jsonMsg.type === 2) {

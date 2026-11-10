@@ -19,15 +19,17 @@ public class WebSocketTask {
     private WebSocketServer webSocketServer;
 
     /**
-     * 每隔 5 秒向所有客户端发送服务端心跳消息
+     * 每隔 5 秒向用户端客户端发送服务端心跳消息
      *
-     * <p>用于验证连接存活、前端探活，生产环境可替换为 ping/pong 心跳。
+     * <p>心跳用于用户端（小程序）探活。管理端（浏览器）自带断线重连机制，
+     * 无需服务端心跳，且群发会误触发管理端弹窗，故此处仅推送给用户端会话
+     * （sid 为纯数字 userId），避免打扰管理端。
      */
     @Scheduled(cron = "0/5 * * * * ?")
     public void sendMessageToClient() {
         String time = DateTimeFormatter.ofPattern("HH:mm:ss").format(LocalDateTime.now());
         String message = "{\"type\":0,\"content\":\"服务端心跳：" + time + "\"}";
-        webSocketServer.sendToAllClient(message);
-        log.debug("[WebSocket] 心跳推送完成，在线客户端数={}", webSocketServer.onlineCount());
+        webSocketServer.sendToUserClients(message);
+        log.debug("[WebSocket] 心跳推送完成，在线用户端客户端数={}", webSocketServer.onlineCount());
     }
 }
