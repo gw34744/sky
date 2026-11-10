@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>苍穹外卖新功能 · 新手教学方案</title>
+<style>
+  @page { @bottom-center { content: "第 " counter(page) " 页"; } }
+  @page cover { @bottom-center { content: none; } }
+  section[role="cover"] { page: cover; }
+  .toc-list, .toc-list ol, .toc-list ul { list-style: none; }
+  body { font-family: "SimSun", "宋体", serif; color: #1a1a1a; line-height: 1.8; }
+  h1, h2, h3 { font-family: "SimSun", "宋体", serif; color: #0d47a1; }
+  h2 { border-left: 5px solid #0d47a1; padding-left: 10px; margin-top: 26px; }
+  h3 { color: #1565c0; }
+  code { font-family: "Consolas", "Courier New", monospace; background: #f4f6f8; padding: 1px 5px; border-radius: 3px; font-size: 11pt; }
+  pre { background: #f7f9fb; border: 1px solid #e3e8ee; border-radius: 6px; padding: 12px 16px; overflow-x: auto; font-family: "Consolas", "Courier New", monospace; font-size: 10.5pt; line-height: 1.6; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 10.5pt; }
+  th, td { border: 1px solid #c9d4e0; padding: 6px 9px; text-align: left; }
+  th { background: #eef3f8; color: #0d47a1; font-weight: bold; }
+  blockquote { border-left: 4px solid #90a4ae; margin: 12px 0; padding: 6px 16px; color: #546e7a; background: #fafbfc; }
+  .cover-title { font-size: 28pt; font-weight: bold; color: #0d47a1; text-align: center; margin-top: 150px; }
+  .cover-sub { font-size: 16pt; color: #455a64; text-align: center; margin-top: 24px; }
+  .cover-meta { font-size: 12pt; color: #78909c; text-align: center; margin-top: 60px; }
+  .toc-title { font-size: 18pt; font-weight: bold; color: #0d47a1; text-align: center; margin-bottom: 20px; }
+  .toc-list { font-size: 12pt; }
+  .toc-list li { margin: 6px 0; }
+  .toc-list a { color: #1a1a1a; text-decoration: none; }
+  p { text-indent: 2em; margin: 8px 0; }
+  blockquote p { text-indent: 0; }
+  .src-note { font-size: 9.5pt; color: #78909c; background: #f7f9fb; padding: 6px 10px; border-radius: 4px; text-indent: 0; }
+</style>
+</head>
+<body>
+
+<section role="cover">
+  <p class="cover-title">苍穹外卖新功能</p>
+  <p class="cover-sub">新手教学方案</p>
+  <p class="cover-meta">写给"许愿式开发"的自己：把被跳过的原理，一个一个补回来<br>Redis 缓存 · 事务与并发 · 多线程</p>
+</section>
+
+<section role="cover">
+<nav class="doc-toc" aria-label="文档目录">
+  <p class="toc-title">目 录</p>
+  <ol class="toc-list">
+    <li><a href="#section-0">第一部分：学习总纲（先读这里）</a></li>
+    <li><a href="#section-1">第一章：Redis 缓存</a></li>
+    <li><a href="#section-2">第二章：事务与并发</a></li>
+    <li><a href="#section-3">第三章：多线程</a></li>
+    <li><a href="#section-4">附录：演示代码清单与运行指南</a></li>
+  </ol>
+</nav>
+</section>
+
+<section class="chapter" data-page-restart="1">
+
+<h1 id="section-0">第一部分：学习总纲（先读这里）</h1>
+
+<p>这份教学方案的缘起：过去这些功能都是 AI 帮你直接实现的，你只是"许愿"然后拿到了结果，但中间的原理、为什么这么设计、每一行代码在干什么，你并没有真正掌握。本方案的目的，就是把这些"被跳过"的知识，用新手能听懂的话加上能自己跑起来的演示案例，一个一个补回来。</p>
+
+<h2>0.1 你的现状定位</h2>
+<p>跟着黑马视频学过 SSM 框架和苍穹外卖，能看懂基本的 Controller / Service / Mapper 分层；但很多细节已经遗忘，基础不算扎实；这次新加的功能（Redis 缓存、事务、多线程、MQ、JWT、状态机等）是"许愿式开发"——你知道"加了缓存"，但说不清"为什么加、怎么加、加了会有什么坑"。</p>
+
+<h2>0.2 本次教学聚焦的三大主题</h2>
+<p>你明确说最想先学透的是 Redis 缓存、事务与并发、多线程。这三个恰好是项目里真实用到、代码已经写好的，面试最高频被深挖的，而且互相有内在联系（多线程是事务并发和缓存三防的底层基础）。</p>
+
+<h2>0.3 这份方案怎么用（五步闭环）</h2>
+<p>每个知识点都遵循同一个五步闭环，请不要跳步：第一步先看"生活化比喻"建立直觉；第二步理解"核心概念"；第三步跑"演示案例"亲手运行看到现象；第四步读"逐行注释"搞清楚每一行在干嘛；第五步对照"项目真实代码"学以致用。</p>
+<blockquote><p>重要原则：演示案例必须自己动手跑一遍。光看不跑，等于又回到"许愿式开发"。跑代码时出现的每一个报错、每一个输出，都是你真正学会的契机。</p></blockquote>
+
+<h2>0.4 三个主题的关系</h2>
+<p>多线程是最底层基础，是事务并发和缓存三防的地基。建议学习顺序：先学多线程（打地基），再学事务与并发，最后学 Redis 缓存（因为缓存三防的核心就是并发控制）。但每章内部是自洽的，也可以按兴趣跳着读。</p>
+
+<h1 id="section-1">第一章：Redis 缓存——从"为什么要缓存"到"三防"</h1>
+
+<h2>1.1 为什么要缓存？</h2>
+<p><strong>生活化比喻</strong>：你是奶茶店老板，店里有块小黑板。顾客每次来问"珍珠奶茶多少钱"，你如果每次都翻厚厚的价目本（查数据库），高峰期（大促、午饭时间）会把数据库累垮。把最常被问的价格写在黑板上（缓存），顾客一问就秒答。</p>
+<p><strong>缓存的核心价值</strong>：把"读多写少"的热点数据，放到一个读取更快、离业务更近的地方，减少对数据库的访问压力。</p>
+<pre><code>没有缓存：  用户 → 应用 → 数据库（每次都查，慢、压力大）
+有缓存：    用户 → 应用 → 缓存(Redis) → 命中直接返回（快）
+                              ↓ 未命中
+                            数据库（查一次，再回填缓存）</code></pre>
+
+<h2>1.2 Redis 到底是什么？</h2>
+<p>Redis 是一个基于内存的 key-value 存储，数据存在内存里所以极快（每秒可处理十万级请求），支持丰富的数据结构（字符串、哈希、列表、集合、有序集合），支持过期时间。</p>
+<table>
+<thead><tr><th>特性</th><th>说明</th><th>对项目的意义</th></tr></thead>
+<tbody>
+<tr><td>基于内存</td><td>数据在 RAM，读写微秒级</td><td>比 MySQL（磁盘）快几个数量级</td></tr>
+<tr><td>key-value</td><td>像一个大 Map</td><td>存 dish_1 → 菜品列表</td></tr>
+<tr><td>支持过期</td><td>每个 key 可设 TTL</td><td>解决内存膨胀、缓存一致性兜底</td></tr>
+</tbody>
+</table>
+
+<h2>1.3 最简单的缓存读写（旁路缓存）</h2>
+<p>这是所有缓存面试题的起点，三步流程：查缓存 → 未命中查库 → 回填缓存。项目里 DishController.list 用的就是它。</p>
+<pre><code>// 最简单的缓存逻辑
+public String 查询价格(String 商品名) {
+    String 价格 = redis.get(商品名);        // 第1步：查缓存
+    if (价格 != null) return 价格;          // 命中，直接返回
+    价格 = 数据库查询(商品名);               // 第2步：未命中，查库
+    redis.set(商品名, 价格);                 // 第3步：回填缓存
+    return 价格;
+}</code></pre>
+
+<h2>1.4 缓存三大问题（穿透 / 击穿 / 雪崩）</h2>
+
+<h3>1.4.1 缓存穿透</h3>
+<p><strong>比喻</strong>：有人故意问你"有没有 888 元的隐形奶茶"——这东西根本不存在，你翻遍价目本也找不到，但每次都得翻。</p>
+<p><strong>定义</strong>：查询一个根本不存在的数据，缓存里没有，数据库里也没有，每次请求都穿透缓存打到数据库。</p>
+<p><strong>解决</strong>：空值缓存（项目用了）、布隆过滤器。项目真实代码（DishController 第 84-90 行）在查库为空时缓存一个"空值标记"（5 分钟短过期），恶意构造不存在的分类 id 时直接命中空标记返回，不再打库。</p>
+
+<h3>1.4.2 缓存击穿</h3>
+<p><strong>比喻</strong>：某爆款奶茶价签刚被撕掉（缓存刚好过期），瞬间 100 人同时问价，全跑去翻价目本，数据库瞬间被打爆。</p>
+<p><strong>定义</strong>：某个热点 key 在过期那一刻，大量并发请求同时涌入，全部打到数据库。</p>
+<p><strong>关键区别</strong>：击穿是"一个热点 key 过期"引发，穿透是"key 本来就不存在"。</p>
+<p><strong>解决</strong>：互斥锁（项目用了 setIfAbsent + 自旋）、逻辑过期。抢到锁的线程去查库重建缓存，其他线程等待后重读缓存。</p>
+
+<h3>1.4.3 缓存雪崩</h3>
+<p><strong>比喻</strong>：店里价签用同一种墨水，某天同时褪色（大量 key 同时过期），所有顾客的问题瞬间全涌向价目本。</p>
+<p><strong>定义</strong>：大量 key 在同一时刻集中过期，导致大量请求同时打到数据库。</p>
+<p><strong>解决</strong>：过期时间加随机值（项目用了）、集群高可用、限流降级。项目真实代码：TTL = 30 + 随机(0~10) 分钟。</p>
+
+<h3>1.4.4 三防对比速记表</h3>
+<table>
+<thead><tr><th>问题</th><th>触发条件</th><th>核心解法</th><th>项目里怎么做</th></tr></thead>
+<tbody>
+<tr><td>穿透</td><td>查不存在的 key</td><td>空值缓存 / 布隆过滤器</td><td>空值标记（5 分钟）</td></tr>
+<tr><td>击穿</td><td>热点 key 过期瞬间</td><td>互斥锁 / 逻辑过期</td><td>setIfAbsent 互斥锁 + 自旋</td></tr>
+<tr><td>雪崩</td><td>大量 key 同时过期</td><td>过期时间随机化</td><td>TTL = 30 + 随机(0~10) 分钟</td></tr>
+</tbody>
+</table>
+
+<h2>1.5 RedisTemplate vs Spring Cache</h2>
+<p>项目里"菜品"用 RedisTemplate 手动缓存，"套餐"用 Spring Cache 注解，这是黑马刻意设计的对比，也是面试官爱追问的点。比喻：RedisTemplate 是手动挡汽车，控制力强但累；Spring Cache 是自动挡，省事但细节不可控。</p>
+<table>
+<thead><tr><th>维度</th><th>RedisTemplate 手动</th><th>Spring Cache 注解</th></tr></thead>
+<tbody>
+<tr><td>实现</td><td>自己写 get/set/delete</td><td>注解声明式，AOP 代理</td></tr>
+<tr><td>代码侵入</td><td>缓存逻辑混在业务里</td><td>业务代码干净</td></tr>
+<tr><td>key 管理</td><td>手动拼接 "dish_" + id</td><td>SpEL 表达式 #categoryId</td></tr>
+<tr><td>失效</td><td>手动 keys(pattern)+delete</td><td>@CacheEvict 自动</td></tr>
+<tr><td>灵活性</td><td>高</td><td>低</td></tr>
+</tbody>
+</table>
+<p><strong>面试要能讲清的一句话</strong>：两者本质都是把热点数据从数据库搬到 Redis，只是封装层级不同。RedisTemplate 是底层 API，Spring Cache 是它之上的声明式封装。</p>
+
+<h2>1.6 缓存与数据库一致性</h2>
+<p>项目采用"先更新数据库，再删缓存"的旁路缓存策略：写操作时先更新 DB，再删除对应缓存，下次读时缓存未命中重新查库回填，拿到最新值。为什么是"删缓存"而不是"更新缓存"：删更简单，避免算错值，靠"下次读回填"保证最终一致，配合过期时间兜底。</p>
+
+<h2>1.7 Redis 序列化（隐藏的坑）</h2>
+<p>Redis 存 value 默认用 JDK 序列化，存进去是 \xAC\xED... 二进制，redis-cli 看是乱码，还要求实体实现 Serializable。项目修复（RedisConfiguration）：key 用 StringRedisSerializer，value 用 GenericJackson2JsonRedisSerializer（JSON + 类型信息），value 变可读 JSON、跨语言可用、实体不用实现 Serializable。</p>
+
+<h2>1.8 本章自测题</h2>
+<p>1. 缓存的核心价值是什么？什么数据适合缓存？ 2. 旁路缓存的三步流程是什么？ 3. 穿透、击穿、雪崩分别是什么？触发条件有什么不同？ 4. 项目里分别用什么方案解决了这三个问题？ 5. RedisTemplate 和 Spring Cache 的本质区别是什么？</p>
+<blockquote><p>答不上来就回到对应小节重读，别急着往下走。这是"真正学会"和"许愿式开发"的分水岭。</p></blockquote>
+
+<h1 id="section-2">第二章：事务与并发——从"ACID"到"为什么下单必须原子"</h1>
+
+<h2>2.1 为什么需要事务？</h2>
+<p><strong>生活化比喻</strong>：银行转账从 A 转 100 元到 B，内部两步：A 余额减 100、B 余额加 100。如果只执行第一步就崩溃，A 的钱没了、B 的钱也没到账——凭空消失 100 元。事务保证"一组操作要么全部成功，要么全部失败（回滚）"。</p>
+<p><strong>对应项目</strong>：submitOrder 下单方法内部有 3 步写操作（插订单、批量插明细、清购物车）。如果第 1 步成功、第 2 步失败，就产生"有订单没明细"的脏数据——这正是原始代码缺失事务导致的真实 bug。</p>
+
+<h2>2.2 核心概念：ACID</h2>
+<table>
+<thead><tr><th>特性</th><th>英文</th><th>一句话解释</th><th>生活比喻</th></tr></thead>
+<tbody>
+<tr><td>原子性</td><td>Atomicity</td><td>要么全做，要么全不做</td><td>转账两步必须同时成功</td></tr>
+<tr><td>一致性</td><td>Consistency</td><td>事务前后数据都符合规则</td><td>转账前后总额不变</td></tr>
+<tr><td>隔离性</td><td>Isolation</td><td>并发事务互不干扰</td><td>别人转账不影响我</td></tr>
+<tr><td>持久性</td><td>Durability</td><td>提交后永久保存</td><td>钱到账了不会丢</td></tr>
+</tbody>
+</table>
+
+<h2>2.3 @Transactional 是什么？怎么用？</h2>
+<p>Spring 的 @Transactional 注解加在方法上，Spring 自动为方法开启事务：正常执行完就提交，抛异常就回滚。它通过 AOP 代理实现——Spring 给类包一层代理对象，代理在调用真正方法前开启事务、结束后提交/回滚。</p>
+<pre><code>@Transactional   // 加这个注解，方法内的数据库操作就变成一个事务
+public OrderSubmitVO submitOrder(OrdersSubmitDTO dto) {
+    orderMapper.insert(order);                    // 第1步
+    orderDetailMapper.insertBatch(orderDetails);  // 第2步
+    shoppingCartMapper.deleteByUserId(userId);    // 第3步
+    // 正常返回→提交；任何一步抛异常→全部回滚
+}</code></pre>
+
+<h3>2.3.1 事务失效的四大坑（面试必背）</h3>
+<p><strong>坑 1 自调用</strong>：同类内部 this.methodB() 直接调用，绕过了代理，事务不生效。<strong>坑 2 异常被吞</strong>：catch 后不抛出，事务感知不到异常，不会回滚。<strong>坑 3 非 public 方法</strong>：private 方法代理无法拦截。<strong>坑 4 异常类型不对</strong>：默认只有 RuntimeException 和 Error 触发回滚，受检异常需 rollbackFor 指定。</p>
+
+<h3>2.3.2 演示案例：事务回滚</h3>
+<p>配套可运行 Demo（Demo6_Transaction）演示了转账成功（提交）和转账失败（回滚撤销操作）两种情况，直观理解 @Transactional 在背后做的事。</p>
+
+<h2>2.4 事务隔离级别与并发问题</h2>
+<p>当多个事务同时操作同一批数据时，产生并发问题。这是"事务"和"多线程"交叉的地方。</p>
+<h3>2.4.1 四大并发问题</h3>
+<table>
+<thead><tr><th>问题</th><th>英文</th><th>一句话解释</th></tr></thead>
+<tbody>
+<tr><td>脏读</td><td>Dirty Read</td><td>读到了别人未提交的数据（可能被回滚）</td></tr>
+<tr><td>不可重复读</td><td>Non-repeatable Read</td><td>同一事务两次读，结果不一样</td></tr>
+<tr><td>幻读</td><td>Phantom Read</td><td>同一事务两次查询，行数变了</td></tr>
+<tr><td>丢失更新</td><td>Lost Update</td><td>两个事务同时改，后提交覆盖先提交</td></tr>
+</tbody>
+</table>
+<h3>2.4.2 四大隔离级别</h3>
+<table>
+<thead><tr><th>隔离级别</th><th>脏读</th><th>不可重复读</th><th>幻读</th><th>性能</th></tr></thead>
+<tbody>
+<tr><td>读未提交 READ UNCOMMITTED</td><td>出现</td><td>出现</td><td>出现</td><td>最高</td></tr>
+<tr><td>读已提交 READ COMMITTED</td><td>解决</td><td>出现</td><td>出现</td><td>高</td></tr>
+<tr><td>可重复读 REPEATABLE READ（MySQL 默认）</td><td>解决</td><td>解决</td><td>出现</td><td>中</td></tr>
+<tr><td>串行化 SERIALIZABLE</td><td>解决</td><td>解决</td><td>解决</td><td>最低</td></tr>
+</tbody>
+</table>
+<p>隔离级别越高，数据越安全，但并发性能越低，是在安全性和性能之间权衡。MySQL 默认是可重复读（REPEATABLE READ）。</p>
+
+<h2>2.5 并发唯一性：雪花算法</h2>
+<p><strong>问题</strong>：原始代码用 System.currentTimeMillis() 当订单号，高并发下同一毫秒多个请求拿到相同时间戳，导致撞号。</p>
+<p><strong>雪花算法 64 位结构</strong>：1 位符号位 + 41 位时间戳（69年）+ 10 位机器标识（1024节点）+ 12 位序列号（同毫秒4096个）。</p>
+<p><strong>三个特性</strong>：趋势递增（利于索引）、分布式唯一、无第三方依赖。项目里 SnowflakeIdUtil 已经实现，还处理了时钟回拨异常。</p>
+<h3>2.5.1 雪花算法 vs UUID</h3>
+<table>
+<thead><tr><th>方案</th><th>是否递增</th><th>对索引影响</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>雪花算法</td><td>趋势递增</td><td>利于 B+ 树插入</td><td>推荐</td></tr>
+<tr><td>UUID</td><td>完全随机</td><td>导致页分裂、性能差</td><td>不推荐做主键</td></tr>
+</tbody>
+</table>
+<p>为什么递增对数据库重要：MySQL 的 InnoDB 用 B+ 树组织主键，主键递增时新数据总是追加到末尾效率高；UUID 随机则频繁页分裂。</p>
+
+<h2>2.6 订单状态机的并发问题（承上启下）</h2>
+<p>状态机解决了"状态流转是否合法"，但没解决并发问题：两个并发请求同时把订单从"待接单"转到"已接单"，状态机校验都通过，导致重复接单。解决方案：乐观锁（update ... where status = 旧值，用影响行数判断）、分布式锁、条件更新（CAS）。这一节引出的乐观锁/CAS 在第三章多线程里详细展开。</p>
+
+<h2>2.7 本章自测题</h2>
+<p>1. ACID 四个字母分别代表什么？ 2. 为什么 submitOrder 必须加 @Transactional？ 3. @Transactional 失效的四大坑？为什么自调用会失效？ 4. 脏读、不可重复读、幻读有什么区别？MySQL 默认隔离级别？ 5. 为什么订单号不能用 currentTimeMillis？雪花算法 64 位怎么分配？ 6. 雪花算法和 UUID 相比为什么更适合做主键？</p>
+
+<h1 id="section-3">第三章：多线程——一切并发问题的地基</h1>
+
+<h2>3.1 什么是线程？为什么要多线程？</h2>
+<p><strong>比喻</strong>：一家餐厅只有 1 个厨师（单线程），来 10 个客人只能一个个做；雇 10 个厨师（多线程）可以同时做 10 道菜。</p>
+<p><strong>核心概念</strong>：进程是一个正在运行的程序，是资源分配的最小单位；线程是进程内部的一条执行路径，是 CPU 调度的最小单位，一个进程可有多个线程。多线程让程序"同时"做多件事，但多个线程同时访问同一份数据会引发"线程安全"问题。</p>
+
+<h2>3.2 多线程的核心问题：共享数据的并发安全</h2>
+<p><strong>比喻</strong>：两个厨师同时往同一个锅里加盐，都先看了"当前盐量 5 克"，然后都加 1 克，结果锅里是 6 克而不是 7 克——因为"看"和"加"不是原子的。</p>
+<p><strong>演示案例（必跑，Demo1_CounterBug）</strong>：100 个线程每个给共享变量 count 加 1000 次，期望 100000，实际结果总是更小（如 99131），且每次不同。</p>
+<pre><code>static int count = 0;
+// 100 个线程，每个 count++ 1000 次
+count++;   // ❌ 这行不是原子操作！
+// 底层三步：读 count → 加 1 → 写回 count
+// 两个线程同时"读"到相同值，各加 1 写回，一次加法丢失 → 竞态条件</code></pre>
+<blockquote><p>这个案例是理解后面所有锁、原子类、synchronized 的起点。先亲手跑出这个 bug，再学解法，印象最深。</p></blockquote>
+
+<h2>3.3 解决并发安全：synchronized、volatile、原子类</h2>
+<h3>3.3.1 synchronized：互斥锁</h3>
+<p>让"读-改-写"变成原子操作，同一时刻只允许一个线程进入临界区。</p>
+<pre><code>static synchronized void increment() { count++; }  // 同一时刻只有一个线程能进</code></pre>
+<h3>3.3.2 volatile：保证可见性</h3>
+<p>每个线程可能有自己的工作内存（CPU 缓存），线程 A 改了变量线程 B 看不到。volatile 保证修改对所有线程立即可见，并禁止指令重排序。但 volatile 只保证可见性，不保证原子性，count++ 这种复合操作光用 volatile 还是不对。</p>
+<h3>3.3.3 原子类 AtomicInteger：更优雅的解法</h3>
+<pre><code>static AtomicInteger count = new AtomicInteger(0);
+count.incrementAndGet();   // 原子地 +1，底层用 CAS 实现</code></pre>
+<p>原子类内部用 CAS（Compare-And-Swap 比较并交换）实现无锁的原子操作，性能比 synchronized 好。CAS 一句话解释：修改前先比较"当前值是不是我预期的旧值"，是才改，不是就重试。这就是乐观锁的底层原理。</p>
+
+<h2>3.4 ThreadLocal：每个线程自己的"私人物品柜"</h2>
+<p><strong>比喻</strong>：公司前台有公共储物柜，每个员工都需要存自己的东西，都放同一个格子就乱了。ThreadLocal 给每个线程分配一个"私人储物柜"，各存各的互不干扰。</p>
+<p><strong>项目真实代码 BaseContext</strong>：用 ThreadLocal 存"当前登录用户 ID"。</p>
+<pre><code>public class BaseContext {
+    public static ThreadLocal&lt;Long&gt; threadLocal = new ThreadLocal&lt;&gt;();
+    public static void setCurrentId(Long id) { threadLocal.set(id); }
+    public static Long getCurrentId() { return threadLocal.get(); }
+    public static void removeCurrentId() { threadLocal.remove(); }  // 重要！
+}</code></pre>
+<p><strong>为什么用它</strong>：一次 HTTP 请求从拦截器到 Controller 到 Service 全程在同一个线程里跑，把 userId 放进 ThreadLocal，后续任何层都能直接 getCurrentId() 拿到，不用一层层传参。</p>
+<p><strong>这也解释了一个前面的 bug</strong>：支付回调是微信服务器主动调用的，走的是另一个线程，那个线程的 ThreadLocal 里没有 userId，所以 getCurrentId() 返回 null——这就是"支付回调依赖登录态"bug 的根源。理解 ThreadLocal，你就彻底懂了这个 bug。</p>
+<h3>3.4.1 ThreadLocal 的两大坑</h3>
+<p><strong>坑 1 内存泄漏</strong>：ThreadLocal 的 key 是弱引用但 value 是强引用，线程（尤其线程池）长期存活时不 remove 会导致 value 一直被引用，内存泄漏。正确做法是 finally 里 remove。<strong>坑 2 跨线程丢失</strong>：ThreadLocal 数据只在当前线程有效，子线程（@Async、MQ 消费、线程池）拿不到，这正是 MDC traceId 跨线程传递要解决的问题。</p>
+
+<h2>3.5 线程池：为什么要池化？</h2>
+<p><strong>比喻</strong>：每来一个任务就"招临时工"（new Thread），结束就"辞退"，频繁招人辞人成本极高。线程池就是"固定雇一批常驻员工"，任务来了分配，完了回收，避免频繁创建销毁线程。</p>
+<p><strong>关键参数</strong>（对应项目 AsyncConfiguration）：corePoolSize 核心线程数（常驻）、maxPoolSize 最大线程数（扩容上限）、queueCapacity 队列容量（任务排队）、拒绝策略（CallerRunsPolicy 由调用线程执行）。</p>
+<pre><code>任务来了 → 核心线程没满？直接用核心线程
+        → 核心线程满了？进队列排队
+        → 队列也满了？扩容到最大线程数
+        → 最大线程也满了？走拒绝策略</code></pre>
+<h3>3.5.1 Spring 的 @Async</h3>
+<p>让方法变成异步执行（扔给线程池，主线程立即返回不等待）。两个坑：方法不能是 private；调用方和目标方法要在不同 Bean（同类自调用不走代理，和 @Transactional 失效同理）。</p>
+
+<h2>3.6 并发工具：CountDownLatch 和 AtomicReference</h2>
+<p>这两个工具在项目的"缓存击穿并发测试"里真实用到了。</p>
+<h3>3.6.1 CountDownLatch：让线程"同时起跑"或"等所有跑完"</h3>
+<p>比喻：赛跑发令枪。所有运动员就位（ready.countDown()），裁判发令（start.countDown()），大家同时起跑，跑完裁判等所有人到终点（done.await()）。用途：并发测试里保证 10 个线程真的同时发起请求，否则串行跑测不出击穿问题。</p>
+<h3>3.6.2 AtomicReference / AtomicInteger</h3>
+<p>AtomicInteger 是原子的 int；AtomicReference&lt;T&gt; 是原子的对象引用，配合 compareAndSet 实现无锁更新。</p>
+
+<h2>3.7 把多线程和前面串起来</h2>
+<table>
+<thead><tr><th>现象</th><th>多线程底层原因</th></tr></thead>
+<tbody>
+<tr><td>缓存击穿</td><td>热点 key 过期，多线程并发打到数据库</td></tr>
+<tr><td>缓存击穿的锁 setIfAbsent</td><td>用 Redis 原子操作实现互斥，只让一个线程查库</td></tr>
+<tr><td>事务并发问题（脏读等）</td><td>多个事务（线程）同时操作同一批数据</td></tr>
+<tr><td>状态机并发重复接单</td><td>两个线程同时校验状态都通过，重复更新</td></tr>
+<tr><td>支付回调拿不到 userId</td><td>回调是另一个线程，ThreadLocal 不跨线程</td></tr>
+<tr><td>MDC traceId 跨线程丢失</td><td>ThreadLocal 数据不自动传给子线程</td></tr>
+</tbody>
+</table>
+<p><strong>一句话总结</strong>：多线程让程序高效，但引入"共享数据并发安全"问题；解决手段有锁（synchronized）、原子类（CAS）、ThreadLocal（线程隔离）、线程池（资源复用）、并发工具（CountDownLatch）。</p>
+
+<h2>3.8 本章自测题</h2>
+<p>1. 进程和线程的区别？ 2. 为什么 count++ 多线程下会出错？底层几步？ 3. synchronized 和 volatile 分别解决什么？volatile 能保证 count++ 正确吗？ 4. CAS 是什么？原子类靠什么实现无锁？ 5. ThreadLocal 原理？两大坑？ 6. 线程池核心参数和执行流程？ 7. CountDownLatch 在并发测试里起什么作用？</p>
+
+<h1 id="section-4">附录：演示代码清单与运行指南</h1>
+
+<h2>4.1 演示代码位置</h2>
+<p>演示代码已放在项目 workbuddy/新手教学方案/demo 目录下，是一个纯 Java、无任何外部依赖的 Maven 项目，可直接编译运行。每个 Demo 都是一个独立的 main 方法，代码里有大量中文注释。</p>
+
+<h2>4.2 演示清单（建议按顺序跑）</h2>
+<table>
+<thead><tr><th>演示</th><th>对应章节</th><th>讲什么</th><th>关键现象</th></tr></thead>
+<tbody>
+<tr><td>Demo1_CounterBug</td><td>第三章 3.2</td><td>多线程竞态条件</td><td>count 结果 &lt; 100000，每次不同</td></tr>
+<tr><td>Demo2_FixCounter</td><td>第三章 3.3</td><td>三种并发修复方案</td><td>只有 synchronized 和原子类正确</td></tr>
+<tr><td>Demo3_ThreadLocal</td><td>第三章 3.4</td><td>ThreadLocal 线程隔离</td><td>子线程 get 到 null（跨线程丢失）</td></tr>
+<tr><td>Demo4_CacheBreakdown</td><td>第一章 1.4.2</td><td>缓存击穿防护</td><td>10 个并发请求，查库只 1 次</td></tr>
+<tr><td>Demo5_Snowflake</td><td>第二章 2.5</td><td>雪花算法 vs 时间戳</td><td>时间戳撞号，雪花不撞</td></tr>
+<tr><td>Demo6_Transaction</td><td>第二章 2.3</td><td>事务提交与回滚</td><td>异常时操作被撤销</td></tr>
+</tbody>
+</table>
+
+<h2>4.3 运行方法</h2>
+<p><strong>方式一 IDEA（推荐）</strong>：用 IDEA 打开 demo 目录，找到 src/main/java/com/sky/learn/ 下的任意 Demo*.java，右键 Run。</p>
+<p><strong>方式二 命令行</strong>：</p>
+<pre><code># 编译所有演示
+javac -encoding UTF-8 src/main/java/com/sky/learn/*.java -d out
+# 运行（以 Demo1 为例，加 -Dfile.encoding=UTF-8 防中文乱码）
+java -Dfile.encoding=UTF-8 -cp out com.sky.learn.Demo1_CounterBug</code></pre>
+<blockquote><p>Windows 命令行运行务必加 -Dfile.encoding=UTF-8，否则中文乱码。IDEA 直接运行则不需要。</p></blockquote>
+
+<h2>4.4 学习建议</h2>
+<p>1. 先跑 Demo1，亲眼看到并发 bug，再学修复方案；2. 每个 Demo 代码里的中文注释请逐行读，不要跳；3. 跑完之后回到苍穹外卖项目，用学到的知识重新读 DishController、OrderServiceImpl、BaseContext 等文件，你会发现它们不再"神秘"。</p>
+<p>这些 Demo 是"简化版"，目的是让你理解原理。项目里的真实代码（如完整版 SnowflakeIdUtil、Redis 的 setIfAbsent）是"工程版"，加了更多健壮性处理，但核心思想完全一致。</p>
+
+</section>
+
+</body>
+</html>

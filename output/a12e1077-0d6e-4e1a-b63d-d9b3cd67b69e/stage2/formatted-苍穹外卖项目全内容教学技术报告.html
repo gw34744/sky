@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>苍穹外卖项目 · 全内容教学技术报告</title>
+<style>
+  /* 页面规则：正文页脚居中页码，封面命名页无页眉页脚 */
+  @page { @bottom-center { content: "第 " counter(page) " 页"; } }
+  @page cover { @bottom-center { content: none; } }
+  section[role="cover"] { page: cover; }
+  .toc-list, .toc-list ol, .toc-list ul { list-style: none; }
+  body {
+    font-family: "SimSun", "宋体", serif;
+    color: #1a1a1a;
+    line-height: 1.75;
+  }
+  h1, h2, h3 {
+    font-family: "SimSun", "宋体", serif;
+    color: #0d47a1;
+  }
+  h2 { border-left: 5px solid #0d47a1; padding-left: 10px; margin-top: 28px; }
+  h3 { color: #1565c0; }
+  code {
+    font-family: "Consolas", "Courier New", monospace;
+    background: #f4f6f8;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11pt;
+  }
+  pre {
+    background: #f7f9fb;
+    border: 1px solid #e3e8ee;
+    border-radius: 6px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 10.5pt;
+    line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 14px 0;
+    font-size: 11pt;
+  }
+  th, td {
+    border: 1px solid #c9d4e0;
+    padding: 7px 10px;
+    text-align: left;
+  }
+  th {
+    background: #eef3f8;
+    color: #0d47a1;
+    font-weight: bold;
+  }
+  blockquote {
+    border-left: 4px solid #90a4ae;
+    margin: 12px 0;
+    padding: 6px 16px;
+    color: #546e7a;
+    background: #fafbfc;
+  }
+  .cover-title { font-size: 30pt; font-weight: bold; color: #0d47a1; text-align: center; margin-top: 160px; }
+  .cover-sub { font-size: 16pt; color: #455a64; text-align: center; margin-top: 24px; }
+  .cover-meta { font-size: 12pt; color: #78909c; text-align: center; margin-top: 60px; }
+  .toc-title { font-size: 18pt; font-weight: bold; color: #0d47a1; text-align: center; margin-bottom: 20px; }
+  .toc-list { font-size: 12pt; }
+  .toc-list li { margin: 6px 0; }
+  .toc-list a { color: #1a1a1a; text-decoration: none; }
+  p { text-indent: 2em; margin: 8px 0; }
+  .no-indent { text-indent: 0; }
+  .src-note { font-size: 9.5pt; color: #78909c; background: #f7f9fb; padding: 6px 10px; border-radius: 4px; text-indent: 0; }
+</style>
+</head>
+<body>
+
+<section role="cover">
+  <p class="cover-title">苍穹外卖项目</p>
+  <p class="cover-sub">全内容教学技术报告</p>
+  <p class="cover-meta">基于项目全部功能添加与改进的系统性拆解与学习指南<br>Java 后端 · 工程实践 · 面试准备</p>
+</section>
+
+<section role="cover">
+<nav class="doc-toc" aria-label="文档目录">
+  <p class="toc-title">目 录</p>
+  <ol class="toc-list">
+    <li><a href="#section-1">一、项目全景：从教学项目到工程实践</a></li>
+    <li><a href="#section-2">二、基础设施加固</a></li>
+    <li><a href="#section-3">三、核心业务建模</a></li>
+    <li><a href="#section-4">四、异步解耦：RabbitMQ 支付回调异步化</a></li>
+    <li><a href="#section-5">五、可观测性：统一日志 + MDC 链路追踪</a></li>
+    <li><a href="#section-6">六、安全体系：RBAC 权限模型</a></li>
+    <li><a href="#section-7">七、高可用：限流、熔断与缓存三防</a></li>
+    <li><a href="#section-8">八、质量保障：63 个测试用例</a></li>
+    <li><a href="#section-9">九、其他关键改进（速览）</a></li>
+    <li><a href="#section-10">十、学习路径与面试串联</a></li>
+  </ol>
+</nav>
+</section>
+
+<section class="chapter" data-page-restart="1">
+
+<h1 id="section-1">一、项目全景：从教学项目到工程实践</h1>
+
+<h2>1.1 项目定位与演进脉络</h2>
+<p>苍穹外卖是一个典型的「外卖点餐系统」，原始版本是黑马程序员的教学项目，采用「Java 后端 + Vue 前端」的分层架构。教学版已经具备基本的分层结构、缓存、认证等功能，但距离真实企业项目还有明显差距。我们对项目做了系统性回顾，识别出若干「真实正确性问题」与「健壮性短板」，并按优先级逐一修复与补强。整个演进可以归纳为六个方向、十五个主题：</p>
+
+<table>
+<thead><tr><th>方向</th><th>主题</th><th>解决的核心问题</th></tr></thead>
+<tbody>
+<tr><td>基础设施加固</td><td>下单事务、雪花算法、配置加密</td><td>数据一致性、并发唯一性、密钥安全</td></tr>
+<tr><td>核心业务建模</td><td>订单状态机、支付回调幂等</td><td>业务规则集中化、回调可靠性</td></tr>
+<tr><td>异步解耦</td><td>RabbitMQ 支付回调异步化</td><td>回调响应速度、系统解耦</td></tr>
+<tr><td>可观测性</td><td>统一日志 + MDC 链路追踪</td><td>日志检索、链路串联</td></tr>
+<tr><td>安全体系</td><td>RBAC 权限模型</td><td>细粒度访问控制</td></tr>
+<tr><td>高可用</td><td>限流熔断、缓存三防、访问通道评估</td><td>流量防护、缓存可用性</td></tr>
+<tr><td>质量保障</td><td>63 个测试用例、端到端集成测试</td><td>回归保障、信心验证</td></tr>
+</tbody>
+</table>
+
+<h2>1.2 项目模块结构</h2>
+<p>项目采用 Maven 多模块划分，职责清晰：</p>
+<pre><code>sky-take-out
+├── sky-common    # 通用模块：工具类、常量、枚举、上下文、注解
+├── sky-pojo      # 实体模块：Entity、VO、DTO
+└── sky-server    # 服务模块：Controller、Service、Mapper、配置、拦截器、监听器</code></pre>
+<p>分层架构（Controller → Service → Mapper）职责分明，是后续所有改进的基础。</p>
+
+<h2>1.3 关键设计原则（贯穿全部改进）</h2>
+<p>在动手之前，我们确立了几条贯穿始终的原则，这也是理解所有改进的主线：第一，解决真实问题，不堆技术点——每引入一个技术都必须有明确的问题驱动；第二，最小侵入，渐进式演进——尽量在不破坏存量代码的前提下补强；第三，可测试、可验证——每个改进都配套测试，用证据说话；第四，安全意识内建——密钥脱敏、日志脱敏、幂等设计，都是默认选项而非事后补救。</p>
+
+<h1 id="section-2">二、基础设施加固</h1>
+
+<h2>2.1 下单事务：保证原子性</h2>
+<p><strong>原始缺陷</strong>：<code>OrderServiceImpl.submitOrder</code> 有 3 次数据库写操作（插订单、批量插明细、清购物车），但方法上没有 <code>@Transactional</code>。若第 2/3 步失败，会产生「有订单无明细」或「订单生成但购物车未清」的脏数据。</p>
+<p><strong>解决方案</strong>：给 <code>submitOrder</code> 添加 <code>@Transactional</code> 注解，使三步操作成为一个原子单元。</p>
+<pre><code>@Transactional
+public OrderSubmitVO submitOrder(OrdersSubmitDTO ordersSubmitDTO) { ... }</code></pre>
+<p><strong>核心知识</strong>：事务的 ACID 特性——原子性、一致性、隔离性、持久性；为什么下单必须原子——订单、明细、购物车三者是强关联数据，任何一步失败都必须整体回滚。</p>
+<p><strong>面试要点</strong>：能讲出「事务失效的常见原因」——自调用（同类内部方法调用不走代理）、异常被吞（catch 后不抛出）、非 public 方法、数据库引擎不支持事务等。</p>
+
+<h2>2.2 雪花算法：订单号唯一性</h2>
+<p><strong>原始缺陷</strong>：<code>order.setNumber(String.valueOf(System.currentTimeMillis()))</code> 用毫秒时间戳当订单号，高并发下同一毫秒多个请求会生成相同订单号，导致订单号冲突。</p>
+<p><strong>解决方案</strong>：新增 <code>SnowflakeIdUtil</code>（标准雪花算法），订单号改为 <code>SnowflakeIdUtil.nextIdStr()</code>。</p>
+<p>雪花算法 64 位结构：1 位符号位 + 41 位时间戳 + 10 位机器标识 + 12 位序列号。核心特性：趋势递增（利于 B+ 树索引）、分布式唯一、无第三方依赖。</p>
+<p><strong>面试要点</strong>：额外处理了「时钟回拨」异常场景；能对比雪花算法与 UUID 的优劣（雪花递增利于索引，UUID 无序导致页分裂）。</p>
+
+<h2>2.3 配置加密：jasypt 密钥安全</h2>
+<p><strong>原始缺陷</strong>：<code>application-dev.yml</code> 里数据库密码、阿里云 AccessKey、微信支付密钥全部明文，且随代码提交到 git，仓库一旦泄露则所有密钥暴露。</p>
+<p><strong>解决方案</strong>：引入 jasypt-spring-boot-starter，敏感信息全部替换为 <code>ENC(密文)</code>，解密密钥通过环境变量 <code>JASYPT_ENCRYPTOR_PASSWORD</code> 在运行时注入。</p>
+<pre><code># 配置文件里只留密文
+sky:
+  datasource:
+    password: ENC(UG/5d22c2uxK67UDZz35KC+...)</code></pre>
+<p><strong>核心设计原则：密钥与密文分离</strong>。密文可以进仓库，密钥只能在运行时由运维/环境注入。即使仓库泄露，没有密钥也解不开。加密算法为 <code>PBEWITHHMACSHA512ANDAES_256</code>（AES-256 加密 + HMAC-SHA512 完整性校验 + 随机 IV）。</p>
+<p><strong>面试要点</strong>：判断标准——泄露后能否被用来「冒充身份/访问资源/伪造数据」，能则加密，不能则不加密；密钥轮换意识——如果明文密钥曾进过 git 历史，光改密文不够，必须重置密钥（rotate），这是重要的安全意识加分项。</p>
+
+<h1 id="section-3">三、核心业务建模</h1>
+
+<h2>3.1 订单状态机：业务规则集中化</h2>
+<p><strong>原始缺陷</strong>：订单有 6 个状态，原项目在每个状态转换方法里各自手写 if 判断当前状态，规则散落、魔法数字、难以测试、易遗漏。</p>
+<p><strong>解决方案</strong>：新增 <code>OrderStatus</code> 枚举，用 <code>EnumMap&lt;状态, Set&lt;目标状态&gt;&gt;</code> 集中定义合法流转表，业务方法统一调 <code>checkTransition(current, target)</code> 校验。</p>
+<p><strong>状态流转图（主流程）</strong>：</p>
+<pre><code>待付款(1) ──支付──▶ 待接单(2) ──接单──▶ 已接单(3) ──派送──▶ 派送中(4) ──完成──▶ 已完成(5)
+   │                    │ 拒单                 │ 取消
+   │取消                 ▼                     ▼
+   └───────────────▶ 已取消(6) ◀───────────────┘</code></pre>
+<p><strong>核心实现</strong>：</p>
+<pre><code>public enum OrderStatus {
+    PENDING_PAYMENT(1), TO_BE_CONFIRMED(2), CONFIRMED(3),
+    DELIVERY_IN_PROGRESS(4), COMPLETED(5), CANCELLED(6);
+
+    // 状态机核心：合法流转表
+    private static final Map&lt;OrderStatus, Set&lt;OrderStatus&gt;&gt; TRANSITIONS = buildTransitions();
+
+    public static void checkTransition(OrderStatus current, OrderStatus target) {
+        if (!canTransition(current, target)) throw new OrderBusinessException(ORDER_STATUS_ERROR);
+    }
+}</code></pre>
+<p><strong>设计要点</strong>：状态码自持（枚举在 sky-common，实体在 sky-pojo，用字面量自持状态码避免模块反向依赖）；EnumMap + Set（O(1) 查询的合法流转表）；终态无出口（已完成/已取消的合法目标为空集，任何流转都被拒绝）。</p>
+<p><strong>面试要点</strong>：为什么用枚举而非 if-else/switch（规则集中、类型安全、可单独测试）；终态处理（空集拒绝所有出口）；订单状态与支付状态是正交的两个维度；并发问题（状态机解决合法性，并发安全还需乐观锁/CAS 加固）。</p>
+
+<h2>3.2 支付回调幂等：保证只处理一次</h2>
+<p><strong>原始缺陷</strong>（三个严重问题）：第一，依赖登录态（致命 bug）——<code>paySuccess</code> 用 <code>BaseContext.getCurrentId()</code> 拿 userId，但微信回调是服务器主动发起，没走 JWT 拦截器，ThreadLocal 里是 null，永远查不到订单；第二，无幂等判断——微信重复回调时无脑重复更新状态 + 重复推送；第三，无交易号字段——无法记录微信交易号，无法判重/对账。</p>
+<p><strong>解决方案</strong>：新增 <code>transaction_id</code> 字段；新增按订单号查询 <code>getByNumber</code>（不依赖 userId）；<code>paySuccess</code> 改造为「先查订单，判断 <code>payStatus == PAID</code> 则直接返回」。</p>
+<pre><code>public void paySuccess(String outTradeNo, String transactionId) {
+    Orders orderDB = orderMapper.getByNumber(outTradeNo);  // 不依赖 userId
+    if (orderDB == null) throw new OrderBusinessException(ORDER_NOT_FOUND);
+
+    // 幂等判断：已支付 → 重复回调，直接返回
+    if (Orders.PAID.equals(orderDB.getPayStatus())) {
+        log.info("重复回调，忽略：{}", outTradeNo);
+        return;
+    }
+    // ... 更新状态 + 记录交易号 + 推送提醒
+}</code></pre>
+<p><strong>为什么支付回调必须幂等</strong>：微信回调不保证只发一次（15s/15s/30s/3m... 递增间隔重试），异步、可能重复。</p>
+<p><strong>幂等方案对比</strong>：</p>
+<table>
+<thead><tr><th>方案</th><th>原理</th><th>适用场景</th></tr></thead>
+<tbody>
+<tr><td>状态判断（本项目）</td><td>查状态已处理则跳过</td><td>状态流转简单</td></tr>
+<tr><td>唯一约束 + 数据库</td><td>transaction_id 唯一索引</td><td>需强一致、有流水表</td></tr>
+<tr><td>Redis 分布式锁</td><td>setIfAbsent 抢锁</td><td>高并发、耗时场景</td></tr>
+<tr><td>token/流水号去重</td><td>Redis 判重</td><td>通用接口防重</td></tr>
+</tbody>
+</table>
+<p><strong>面试要点</strong>：能讲清「回调为什么没有登录态」这个关键认知，以及从「状态判断」到「唯一索引 + 流水表 + 分布式锁」的严格幂等演进。</p>
+
+<h1 id="section-4">四、异步解耦：RabbitMQ 支付回调异步化</h1>
+
+<h2>4.1 为什么引入 MQ</h2>
+<p><strong>真实痛点</strong>：微信支付要求回调接口快速返回 <code>SUCCESS</code>，否则判定超时重试。原来的 <code>paySuccess</code> 在回调线程里同步做「改状态 + 推 WebSocket」，一旦后续动作变重会拖慢响应。</p>
+<p><strong>解法</strong>：回调只做「最小必要操作」（幂等校验 + 落库），把「来单提醒」等后续动作通过 MQ 异步解耦。</p>
+<pre><code>微信回调 → 幂等校验 + 落库（快）→ 发送 MQ 消息 → 返回 SUCCESS
+                                      ↓ 异步
+                             消费者推送 WebSocket</code></pre>
+
+<h2>4.2 消息拓扑与可靠性</h2>
+<pre><code>生产者 → Direct交换机 order.notify.exchange → 队列 order.notify.queue → 消费者</code></pre>
+<p><strong>可靠性四件套</strong>：生产者确认（<code>publisher-confirm-type: correlated</code>）、路由失败返回（<code>publisher-returns: true</code>）、消费端手动 ACK（<code>acknowledge-mode: manual</code>）、死信队列（绑定 DLX，重试超限进入死信，人工补偿）。</p>
+
+<h2>4.3 为什么不是定时扫描</h2>
+<p>「支付超时关单」仍用 Spring Task 定时扫描（<code>processTimeoutOrder</code>），因为它是「到点批量处理」的延迟场景；「支付成功通知」是「事件实时驱动」，用 MQ 更合适。两种机制各司其职，是很好的面试论据。</p>
+<p><strong>面试要点</strong>：消息丢失（confirm + 持久化 + 手动 ACK 三段保证）、重复消费（幂等）、积压（扩容消费者 + prefetch）、顺序性（单队列单消费者天然有序）。</p>
+
+<h1 id="section-5">五、可观测性：统一日志 + MDC 链路追踪</h1>
+
+<h2>5.1 问题背景</h2>
+<p>一个外卖订单从下单到完成横跨多个 Controller/Service、异步 MQ 消费者、WebSocket 推送，甚至多个应用实例。没有链路追踪时，日志散落、格式不一、并发下无法区分哪行日志属于哪次请求。目标是给每次请求打上全局唯一 <code>traceId</code>，所有日志都带这个 ID，<code>grep</code> 一个 traceId 就能还原整条调用链。</p>
+
+<h2>5.2 核心概念：MDC</h2>
+<p>MDC（Mapped Diagnostic Context）是 SLF4J 提供的线程级（ThreadLocal 实现）日志上下文容器，可用 <code>%X{key}</code> 在日志格式中取出。</p>
+<pre><code>MDC.put("traceId", "abc123");   // 注入
+log.info("下单成功");            // 日志自动带 traceId=abc123
+MDC.remove("traceId");          // 必须清理</code></pre>
+<p><strong>三个必须牢记的坑</strong>：</p>
+<table>
+<thead><tr><th>坑</th><th>后果</th><th>解法</th></tr></thead>
+<tbody>
+<tr><td>不清理 MDC</td><td>Tomcat 线程复用导致串号</td><td>finally 里 MDC.remove</td></tr>
+<tr><td>跨线程丢上下文</td><td>MQ/@Async/线程池里 traceId 丢失</td><td>手动传递再 put</td></tr>
+<tr><td>只写 %X{} 没 put</td><td>日志里 traceId 为空</td><td>入口 Filter 统一注入</td></tr>
+</tbody>
+</table>
+
+<h2>5.3 三层实现方案</h2>
+<p><strong>第一层 TraceIdUtil（sky-common）</strong>：生成 32 位 traceId、定义 MDC key 与请求头常量。<strong>第二层 TraceIdFilter（sky-server）</strong>：用 Filter（而非 Interceptor）在 Servlet 容器最外层注入/透传/清理。<strong>第三层 logback-spring.xml</strong>：统一格式 <code>%d %-5level [%thread] [traceId:%X{traceId}] %logger - %msg</code>，异步 Appender + 按天/按大小滚动归档 + 环境差异化。</p>
+
+<h2>5.4 异步链路如何保证 traceId 不丢（核心考点）</h2>
+<p>MDC 基于 ThreadLocal，异步线程天然拿不到主线程的 traceId。项目落地了三种跨线程传递：MQ 消费者（消息头透传）、@Async 线程池（TaskDecorator 统一复制，官方推荐一处配置全局生效）、定时任务（独立线程池并行执行）。</p>
+<pre><code>public class MdcTaskDecorator implements TaskDecorator {
+    public Runnable decorate(Runnable runnable) {
+        String traceId = TraceIdUtil.getTraceId();
+        return () -&gt; {
+            try {
+                if (traceId != null) MDC.put(TraceIdUtil.TRACE_ID, traceId);
+                runnable.run();
+            } finally {
+                MDC.remove(TraceIdUtil.TRACE_ID);
+            }
+        };
+    }
+}</code></pre>
+
+<h2>5.5 进阶：SkyWalking / Sleuth</h2>
+<p>手写 MDC 只能解决单服务内的串联；微服务跨进程需专业分布式链路追踪。SkyWalking（Java Agent 字节码增强，零侵入，推荐）或 Spring Cloud Sleuth（已合并进 Micrometer Tracing）。手写 traceId 是「轻量版」，未来可平滑升级。</p>
+
+<h1 id="section-6">六、安全体系：RBAC 权限模型</h1>
+
+<h2>6.1 原始缺陷</h2>
+<p>教学版默认「两个角色（admin/user）+ 两套拦截器 + 两把 JWT 密钥」硬隔离，粒度太粗：只要登录成功，所有管理员能调所有接口，无法区分「店长」「运营」的职责，权限写死在代码里。</p>
+
+<h2>6.2 RBAC 核心概念</h2>
+<p>RBAC = Role-Based Access Control，核心思想：不直接给用户授权，而是给「角色」授权，再把「角色」分配给「用户」。</p>
+<pre><code>用户(User) ──多对多──▶ 角色(Role) ──多对多──▶ 权限(Permission)
+ 员工张三  ──拥有──▶  店长     ──拥有──▶   dish:add / dish:delete
+ 员工李四  ──拥有──▶  运营     ──拥有──▶   order:confirm / order:delivery</code></pre>
+
+<h2>6.3 数据库设计（RBAC0 模型）</h2>
+<p>四张表：<code>role</code>（角色）、<code>permission</code>（权限，细粒度到接口/操作）、<code>employee_role</code>（用户-角色关联）、<code>role_permission</code>（角色-权限关联）。权限编码（perm_code）与 <code>@RequirePermission</code> 注解值一一对应，如 <code>dish:add</code>、<code>order:confirm</code>。</p>
+
+<h2>6.4 代码实现</h2>
+<p><strong>权限注解</strong>：<code>@RequirePermission</code> 标注在 Controller 方法上，声明需要的权限编码（多值满足其一即可）。<strong>拦截器叠加授权校验</strong>（认证 401 / 授权 403 分离）：先解析 JWT 拿 empId 放入 ThreadLocal（认证），再判断方法是否带注解、校验权限编码集合（授权），无权限返回 403。<strong>权限查询带缓存</strong>：<code>PermissionService</code> 用 <code>@Cacheable(cacheNames = "permCodes", key = "#employeeId")</code> 缓存权限集合，避免每请求查库。</p>
+<p><strong>设计要点</strong>：认证与授权分离；权限校验只对标注了 <code>@RequirePermission</code> 的方法生效，未标注的只做登录态校验，向后兼容、渐进式加权限；权限查询走 Redis 缓存。</p>
+<p><strong>面试要点</strong>：RBAC 演进（RBAC0 → RBAC1 角色继承 → RBAC2 约束 → RBAC3）、为什么用角色中间层、401 与 403 的区别。</p>
+
+<h1 id="section-7">七、高可用：限流、熔断与缓存三防</h1>
+
+<h2>7.1 限流与熔断（Resilience4j）</h2>
+<p><strong>限流</strong>：控制单位时间内进入系统的请求数，防流量突增（刷单、秒杀）。<strong>熔断</strong>：下游连续失败时暂时切断调用，快速失败防雪崩。选 Resilience4j 是因为它轻量、纯注解、Spring Cloud 官方推荐、无需独立控制台，适合单体项目。</p>
+<p><strong>实现</strong>：限流（Controller 层）用 <code>@RateLimiter</code>，熔断（Service 层）用 <code>@CircuitBreaker</code>，均带 fallback 方法。</p>
+<p><strong>熔断器状态机（面试必背）</strong>：</p>
+<pre><code>       失败率超阈值
+  CLOSED ────────────&gt; OPEN（快速失败，走 fallback）
+    ↑                    │ 等待 wait-duration
+    │                    ↓
+    └──── 成功 ────── HALF_OPEN（放行少量探测）
+              失败 ────────────&gt; OPEN（继续熔断）</code></pre>
+<p><strong>与 Nginx 双层防护</strong>：网关层粗粒度限流挡大流量，应用层对核心链路（下单、支付）精细限流 + 熔断降级，既防外部刷量又防内部雪崩。</p>
+<p><strong>面试要点</strong>：限流算法（固定窗口/滑动窗口/漏桶/令牌桶）、令牌桶 vs 漏桶、熔断 vs 降级、fallback 方法签名要求。</p>
+
+<h2>7.2 缓存三防：穿透、击穿、雪崩</h2>
+<p>穿透（查不存在的 key 每次都打到 DB）→ 空值缓存 / 布隆过滤器（项目补了空值缓存）；击穿（热点 key 过期瞬间大量并发）→ 互斥锁 / 逻辑过期（项目用 setIfAbsent 互斥锁 + 自旋）；雪崩（大量 key 同时过期）→ 过期时间加随机值 / 集群高可用。</p>
+
+<h2>7.3 缓存两套实现对比（面试高频）</h2>
+<p>项目里「菜品」用 RedisTemplate 手动缓存，「套餐」用 Spring Cache 注解，刻意形成对比：</p>
+<table>
+<thead><tr><th>维度</th><th>RedisTemplate 手动</th><th>Spring Cache 注解</th></tr></thead>
+<tbody>
+<tr><td>实现方式</td><td>自己写 get/set/delete</td><td>注解声明式，AOP 代理</td></tr>
+<tr><td>代码侵入性</td><td>缓存逻辑混在业务代码</td><td>业务代码干净</td></tr>
+<tr><td>key 管理</td><td>手动拼接</td><td>SpEL 表达式</td></tr>
+<tr><td>失效策略</td><td>手动 keys(pattern)+delete</td><td>@CacheEvict 自动</td></tr>
+<tr><td>灵活性</td><td>高</td><td>相对受限</td></tr>
+</tbody>
+</table>
+<blockquote>一句话总结：RedisTemplate 是「手动挡」，控制力强但繁琐；Spring Cache 是「自动挡」，简洁但灵活度受限。</blockquote>
+
+<h2>7.4 Redis 序列化优化</h2>
+<p>原始缺陷：RedisTemplate 只配了 key 的 String 序列化，value 默认 JDK 序列化（二进制流，redis-cli 不可读、实体必须实现 Serializable、跨语言不可用）。修复：value 改用 <code>GenericJackson2JsonRedisSerializer</code>（JSON + <code>@class</code> 类型信息），与 Spring Cache 的序列化策略对齐。</p>
+
+<h1 id="section-8">八、质量保障：63 个测试用例</h1>
+
+<h2>8.1 测试覆盖全景</h2>
+<table>
+<thead><tr><th>测试类</th><th>用例数</th><th>覆盖点</th></tr></thead>
+<tbody>
+<tr><td>CategoryServiceImplTest</td><td>6</td><td>分类增删改查</td></tr>
+<tr><td>EmployeeServiceImplTest</td><td>7</td><td>员工登录、BCrypt 校验</td></tr>
+<tr><td>OrderServiceImplTest</td><td>8</td><td>订单取消/支付/再来一单/回调幂等</td></tr>
+<tr><td>DishServiceImplTest</td><td>8</td><td>菜品删除/起停售/查询</td></tr>
+<tr><td>ShoppingCartServiceImplTest</td><td>8</td><td>购物车增删改查</td></tr>
+<tr><td>DishControllerTest</td><td>4</td><td>缓存命中/击穿并发/穿透空值</td></tr>
+<tr><td>OrderControllerTest</td><td>4</td><td>下单 token 幂等四分支</td></tr>
+<tr><td>GlobalExceptionHandlerTest</td><td>2</td><td>参数校验异常处理</td></tr>
+<tr><td>OrderStatusTest</td><td>7</td><td>状态机合法/非法流转</td></tr>
+<tr><td>RabbitMQIntegrationTest</td><td>1</td><td>RabbitMQ 全链路</td></tr>
+<tr><td>AdminLoginIntegrationTest</td><td>7</td><td>管理端登录端到端 + 认证链路</td></tr>
+</tbody>
+</table>
+<p>测试演进：21 → 32 → 40 → 55 → 63 个用例，逐步补齐 Controller 层、缓存击穿并发、参数校验边界、状态机、Service 层广度、端到端集成。</p>
+
+<h2>8.2 三个高价值测试的设计思路</h2>
+<p><strong>缓存击穿并发测试（最有技术含量）</strong>：用 <code>CountDownLatch</code> + 线程池 + <code>AtomicReference</code> 模拟 10 线程同时请求同一分类，断言「并发击穿时查库只发生一次」，证明击穿防护真的有效。<strong>下单幂等四分支测试</strong>：token 缺失 / token 篡改 / token 一致 / token 已用，覆盖完整幂等逻辑。<strong>端到端集成测试</strong>：<code>@SpringBootTest(RANDOM_PORT)</code> + <code>TestRestTemplate</code> 走完整 HTTP 链路，覆盖登录、401 拦截、合法/伪造 token、真实 Redis 查询。</p>
+
+<h2>8.3 测试技术要点</h2>
+<p>为什么用 Mockito 而非 @SpringBootTest（单测快且隔离，集成测试慢但测完整链路，分层策略）；ThreadLocal 处理（测试前 set，@AfterEach 里 remove，防残留污染）；并发测试保证「同时」（CountDownLatch 先就位再放行）。</p>
+
+<h1 id="section-9">九、其他关键改进（速览）</h1>
+
+<h2>9.1 登录安全与密码加密</h2>
+<p>BCrypt 密码加密（自带盐值、抗彩虹表）、JWT 令牌认证（无状态、可扩展）。</p>
+
+<h2>9.2 数据库优化</h2>
+<p>高频字段补索引、B+ 树原理（聚簇索引、联合索引最左前缀）、分库分表设计（知识储备）。</p>
+
+<h2>9.3 WebSocket 日志与消息规范</h2>
+<p><code>System.out.println</code> 改为 <code>@Slf4j + log.info</code>；订单全流程状态推送规范；催单 bug 修复（消息 type 过滤 + 用户端独立推送）。</p>
+
+<h2>9.4 访问通道承载能力评估</h2>
+<p>对「同步写日志阻塞业务线程」等吞吐瓶颈做分析，配合异步日志、线程池等优化。</p>
+
+<h1 id="section-10">十、学习路径与面试串联</h1>
+
+<h2>10.1 建议学习顺序（由浅入深）</h2>
+<p>先看懂分层架构与模块划分（地基）；再学基础设施加固（事务、雪花算法、配置加密），理解「正确性」；核心业务建模（状态机、幂等），理解「业务规则工程化」；异步解耦（MQ），理解「系统设计」；可观测性（日志 + 链路追踪），理解「运维视角」；安全（RBAC），理解「权限模型」；高可用（限流熔断、缓存三防），理解「稳定性」；最后质量保障（测试），理解「工程素养」。</p>
+
+<h2>10.2 面试叙事主线</h2>
+<blockquote>我在一个外卖教学项目基础上，系统性补齐了它的正确性（事务/幂等/状态机）、安全性（RBAC/配置加密）、稳定性（限流熔断/缓存三防）、可观测性（日志链路追踪）和质量保障（63 个测试），把教学项目改造成了接近真实企业级的工程实践。</blockquote>
+
+<h2>10.3 落地文件索引</h2>
+<table>
+<thead><tr><th>主题</th><th>关键文件</th></tr></thead>
+<tbody>
+<tr><td>链路追踪</td><td>TraceIdUtil、TraceIdFilter、MdcTaskDecorator、AsyncConfiguration、logback-spring.xml</td></tr>
+<tr><td>RBAC</td><td>RequirePermission、PermissionService、PermissionMapper、JwtTokenAdminInterceptor、RBAC权限体系SQL设计.sql</td></tr>
+<tr><td>订单状态机</td><td>OrderStatus（枚举）、OrderServiceImpl、OrderStatusTest</td></tr>
+<tr><td>支付幂等</td><td>OrderMapper（getByNumber）、OrderServiceImpl.paySuccess</td></tr>
+<tr><td>MQ</td><td>RabbitMQConfiguration、OrderNotifyListener</td></tr>
+<tr><td>配置加密</td><td>application.yml、application-dev.yml、pom.xml（jasypt）</td></tr>
+<tr><td>限流熔断</td><td>OrderController、OrderServiceImpl、application.yml（resilience4j）</td></tr>
+<tr><td>测试</td><td>11 个测试类（含 AdminLoginIntegrationTest、RabbitMQIntegrationTest）</td></tr>
+</tbody>
+</table>
+
+<p>这份报告覆盖了苍穹外卖项目从教学版到工程实践版的完整演进。每一处改进都遵循「问题驱动 → 最小侵入 → 可验证」的原则，既解决了真实的技术痛点，又沉淀了可迁移的工程方法论。建议读者结合代码逐项对照学习，重点掌握「为什么这么做」而非仅仅「怎么做」，这才能真正把项目变成自己面试的底气。</p>
+
+</section>
+
+</body>
+</html>
